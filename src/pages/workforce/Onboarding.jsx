@@ -1,158 +1,233 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from "../../lib/base44Stub";
-import PageHeader from '@/components/shared/PageHeader';
-import StatusBadge from '@/components/shared/StatusBadge';
-import EntityFormDialog from '@/components/shared/EntityFormDialog';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { CheckCircle2, Circle, Clock, AlertCircle, Plus } from 'lucide-react';
-import { format } from 'date-fns';
-import { useCurrentUser } from '@/lib/useCurrentUser';
-import { canEdit } from '@/lib/permissions';
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { getProfileOrThrow } from "@/lib/profile";
+import RecordFormModal from "@/components/shared/RecordFormModal";
+import { useModuleColumns } from "@/hooks/useModuleColumns";
+import DynamicField from "@/components/shared/DynamicField";
 
-const fields = [
-  { name: 'employee_name', label: 'Employee Name', required: true },
-  { name: 'employee_email', label: 'Employee Email', type: 'email' },
-  { name: 'task_name', label: 'Task Name', required: true },
-  { name: 'category', label: 'Category', type: 'select', default: 'documents', options: [
-    { value: 'documents', label: 'Documents' },
-    { value: 'background_check', label: 'Background Check' },
-    { value: 'equipment', label: 'Equipment' },
-    { value: 'training', label: 'Training' },
-    { value: 'accounts', label: 'Accounts & Access' },
-    { value: 'compliance', label: 'Compliance' },
-    { value: 'other', label: 'Other' },
-  ]},
-  { name: 'status', label: 'Status', type: 'select', default: 'pending', options: [
-    { value: 'pending', label: 'Pending' },
-    { value: 'in_progress', label: 'In Progress' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'blocked', label: 'Blocked' },
-  ]},
-  { name: 'due_date', label: 'Due Date', type: 'date' },
-  { name: 'assigned_to', label: 'Assigned To' },
-  { name: 'notes', label: 'Notes', type: 'textarea' },
-];
+async function listOnboarding(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
 
-const statusIcon = {
-  pending: <Circle className="w-4 h-4 text-muted-foreground" />,
-  in_progress: <Clock className="w-4 h-4 text-amber-500" />,
-  completed: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-  blocked: <AlertCircle className="w-4 h-4 text-red-500" />,
-};
+  let query = supabase
+    .from("onboarding")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at", { ascending: false });
+
+  if (profile.role === "employee") {
+    query = query.eq("created_by", currentUser.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
 
 export default function Onboarding() {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const { user } = useCurrentUser();
-  const canWrite = canEdit(user, 'onboarding');
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({});
+  const { tableColumns, formColumns } = useModuleColumns("onboarding");
 
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['onboarding'],
-    queryFn: () => base44.entities.OnboardingTask.list('-created_date'),
+  const { data: onboarding = [], isLoading, error } = useQuery({
+    queryKey: ["onboarding", authUser?.id],
+    queryFn: () => listOnboarding(authUser),
+    enabled: !!authUser?.id,
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.OnboardingTask.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['onboarding'] }); setDialogOpen(false); },
-  });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.OnboardingTask.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['onboarding'] }); setDialogOpen(false); setEditing(null); },
+    mutationFn: async (payload) => {
+      const profile = await getProfileOrThrow(authUser.id);
+      const allowedKeys = formColumns.map((f) => f.field_key);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("onboarding")
+        .insert({
+          ...cleanPayload,
+          organization_id: profile.organization_id,
+          created_by: authUser.id,
+          updated_by: authUser.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
+      setForm({});
+      setEditingId(null);
+      setOpen(false);
+    },
   });
 
-  const handleSubmit = (data) => {
-    editing ? updateMutation.mutate({ id: editing.id, data }) : createMutation.mutate(data);
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, payload }) => {
+      const allowedKeys = formColumns.map((f) => f.field_key);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("onboarding")
+        .update({
+          ...cleanPayload,
+          updated_by: authUser.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
+      setForm({});
+      setEditingId(null);
+      setOpen(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      const { error } = await supabase.from("onboarding").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
+    },
+  });
+
+  const openAddModal = () => {
+    setForm({});
+    setEditingId(null);
+    setOpen(true);
   };
 
-  // Group tasks by employee
-  const byEmployee = tasks.reduce((acc, task) => {
-    const key = task.employee_name || 'Unknown';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(task);
-    return acc;
-  }, {});
+  const openEditModal = (row) => {
+    setForm(row);
+    setEditingId(row.id);
+    setOpen(true);
+  };
 
-  const completedCount = tasks.filter(t => t.status === 'completed').length;
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, payload: form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const renderCellValue = (row, fieldKey) => {
+    const value = row[fieldKey];
+    if (value === null || value === undefined || value === "") return "-";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return value;
+  };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1400px]">
-      <PageHeader
-        title="Onboarding"
-        subtitle={`${tasks.length} tasks · ${completedCount} completed`}
-        actionLabel={canWrite ? "Add Task" : undefined}
-        onAction={canWrite ? () => { setEditing(null); setDialogOpen(true); } : undefined}
-      />
-
-      {isLoading ? (
-        <div className="grid gap-4">
-          {[1,2].map(i => <Card key={i} className="p-6 h-32 animate-pulse bg-muted" />)}
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Onboarding</h1>
+          <p className="text-muted-foreground">Manage onboarding records.</p>
         </div>
-      ) : Object.keys(byEmployee).length === 0 ? (
-        <Card className="p-12 text-center text-muted-foreground">No onboarding tasks yet.</Card>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(byEmployee).map(([employee, employeeTasks]) => {
-            const done = employeeTasks.filter(t => t.status === 'completed').length;
-            const pct = Math.round((done / employeeTasks.length) * 100);
-            return (
-              <Card key={employee} className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-base">{employee}</h3>
-                    <p className="text-xs text-muted-foreground">{done}/{employeeTasks.length} tasks complete</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-sm font-semibold">{pct}%</span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {employeeTasks.map(task => (
-                    <div
-                      key={task.id}
-                      onClick={canWrite ? () => { setEditing(task); setDialogOpen(true); } : undefined}
-                      className={`flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background hover:bg-muted/50 transition-colors ${canWrite ? 'cursor-pointer' : ''}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {statusIcon[task.status] || <Circle className="w-4 h-4" />}
-                        <div>
-                          <p className="text-sm font-medium">{task.task_name}</p>
-                          {task.assigned_to && <p className="text-xs text-muted-foreground">Assigned: {task.assigned_to}</p>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">{task.category?.replace(/_/g,' ')}</Badge>
-                        {task.due_date && (
-                          <span className="text-xs text-muted-foreground">{format(new Date(task.due_date), 'MMM d')}</span>
-                        )}
-                        <StatusBadge status={task.status} />
-                      </div>
-                    </div>
+        <button
+          onClick={openAddModal}
+          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+        >
+          + Add Onboarding
+        </button>
+      </div>
+
+      <div className="rounded-2xl border overflow-hidden bg-card">
+        {isLoading ? (
+          <div className="p-6">Loading onboarding records...</div>
+        ) : error ? (
+          <div className="p-6 text-red-600">{error.message}</div>
+        ) : onboarding.length === 0 ? (
+          <div className="p-6 text-muted-foreground">No onboarding records yet.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                {tableColumns.map((col) => (
+                  <th key={col.field_key} className="px-4 py-3 text-left">
+                    {col.field_label}
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {onboarding.map((row) => (
+                <tr key={row.id} className="border-t">
+                  {tableColumns.map((col) => (
+                    <td key={col.field_key} className="px-4 py-3">
+                      {renderCellValue(row, col.field_key)}
+                    </td>
                   ))}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to delete this record?")) {
+                            deleteMutation.mutate(row.id);
+                          }
+                        }}
+                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {canWrite && (
-        <EntityFormDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          title={editing ? 'Edit Task' : 'Add Onboarding Task'}
-          fields={fields}
-          initialData={editing}
-          onSubmit={handleSubmit}
-          isSubmitting={createMutation.isPending || updateMutation.isPending}
-        />
-      )}
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Onboarding" : "Add Onboarding"}>
+        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
+          {formColumns.map((field) => (
+            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
+              <label className="block text-sm mb-1">
+                {field.field_label}
+                {field.required && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              <DynamicField
+                field={field}
+                value={form[field.field_key]}
+                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
+              />
+            </div>
+          ))}
+          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
+              Cancel
+            </button>
+            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
+              {editingId ? "Update Onboarding" : "Save Onboarding"}
+            </button>
+          </div>
+        </form>
+      </RecordFormModal>
     </div>
   );
 }

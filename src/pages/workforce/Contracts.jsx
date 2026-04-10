@@ -1,117 +1,233 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from "../../lib/base44Stub";
-import PageHeader from '@/components/shared/PageHeader';
-import DataTable from '@/components/shared/DataTable';
-import StatusBadge from '@/components/shared/StatusBadge';
-import EntityFormDialog from '@/components/shared/EntityFormDialog';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format } from 'date-fns';
-import { useCurrentUser } from '@/lib/useCurrentUser';
-import { canEdit } from '@/lib/permissions';
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { getProfileOrThrow } from "@/lib/profile";
+import RecordFormModal from "@/components/shared/RecordFormModal";
+import { useModuleColumns } from "@/hooks/useModuleColumns";
+import DynamicField from "@/components/shared/DynamicField";
 
-const fields = [
-  { name: 'employee_name', label: 'Employee Name', required: true },
-  { name: 'employee_email', label: 'Employee Email', type: 'email' },
-  { name: 'client_name', label: 'Client', required: true },
-  { name: 'job_title', label: 'Job Title' },
-  { name: 'contract_type', label: 'Contract Type', type: 'select', default: 'w2', options: [
-    { value: 'w2', label: 'W2' },
-    { value: '1099', label: '1099' },
-    { value: 'c2c', label: 'Corp-to-Corp (C2C)' },
-    { value: 'full_time', label: 'Full Time' },
-  ]},
-  { name: 'start_date', label: 'Start Date', type: 'date', required: true },
-  { name: 'end_date', label: 'End Date', type: 'date' },
-  { name: 'bill_rate', label: 'Bill Rate ($/hr)', type: 'number' },
-  { name: 'pay_rate', label: 'Pay Rate ($/hr)', type: 'number' },
-  { name: 'status', label: 'Status', type: 'select', default: 'draft', options: [
-    { value: 'draft', label: 'Draft' },
-    { value: 'sent', label: 'Sent' },
-    { value: 'signed', label: 'Signed' },
-    { value: 'active', label: 'Active' },
-    { value: 'expired', label: 'Expired' },
-    { value: 'terminated', label: 'Terminated' },
-  ]},
-  { name: 'notes', label: 'Notes', type: 'textarea' },
-];
+async function listContracts(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
 
-const columns = [
-  { header: 'Employee', render: (r) => <span className="font-medium">{r.employee_name}</span> },
-  { header: 'Client', accessor: 'client_name' },
-  { header: 'Job Title', accessor: 'job_title' },
-  { header: 'Type', render: (r) => <StatusBadge status={r.contract_type} /> },
-  { header: 'Start', render: (r) => r.start_date ? format(new Date(r.start_date), 'MMM d, yyyy') : '-' },
-  { header: 'End', render: (r) => r.end_date ? format(new Date(r.end_date), 'MMM d, yyyy') : 'Open' },
-  { header: 'Bill Rate', render: (r) => r.bill_rate ? `$${r.bill_rate}/hr` : '-' },
-  { header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-];
+  let query = supabase
+    .from("contracts")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at", { ascending: false });
+
+  if (profile.role === "employee") {
+    query = query.eq("created_by", currentUser.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
 
 export default function Contracts() {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const { user } = useCurrentUser();
-  const canWrite = canEdit(user, 'contracts');
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({});
+  const { tableColumns, formColumns } = useModuleColumns("contracts");
 
-  const { data: contracts = [], isLoading } = useQuery({
-    queryKey: ['contracts'],
-    queryFn: () => base44.entities.Contract.list('-created_date'),
+  const { data: contracts = [], isLoading, error } = useQuery({
+    queryKey: ["contracts", authUser?.id],
+    queryFn: () => listContracts(authUser),
+    enabled: !!authUser?.id,
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Contract.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['contracts'] }); setDialogOpen(false); },
-  });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Contract.update(id, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['contracts'] }); setDialogOpen(false); setEditing(null); },
+    mutationFn: async (payload) => {
+      const profile = await getProfileOrThrow(authUser.id);
+      const allowedKeys = formColumns.map((f) => f.field_key);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("contracts")
+        .insert({
+          ...cleanPayload,
+          organization_id: profile.organization_id,
+          created_by: authUser.id,
+          updated_by: authUser.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
+      setForm({});
+      setEditingId(null);
+      setOpen(false);
+    },
   });
 
-  const handleSubmit = (data) => {
-    editing ? updateMutation.mutate({ id: editing.id, data }) : createMutation.mutate(data);
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, payload }) => {
+      const allowedKeys = formColumns.map((f) => f.field_key);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("contracts")
+        .update({
+          ...cleanPayload,
+          updated_by: authUser.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
+      setForm({});
+      setEditingId(null);
+      setOpen(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      const { error } = await supabase.from("contracts").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
+    },
+  });
+
+  const openAddModal = () => {
+    setForm({});
+    setEditingId(null);
+    setOpen(true);
   };
 
-  const filtered = statusFilter === 'all' ? contracts : contracts.filter(c => c.status === statusFilter);
+  const openEditModal = (row) => {
+    setForm(row);
+    setEditingId(row.id);
+    setOpen(true);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, payload: form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const renderCellValue = (row, fieldKey) => {
+    const value = row[fieldKey];
+    if (value === null || value === undefined || value === "") return "-";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return value;
+  };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1400px]">
-      <PageHeader
-        title="Contracts"
-        subtitle={`${contracts.length} total contracts`}
-        actionLabel={canWrite ? "New Contract" : undefined}
-        onAction={canWrite ? () => { setEditing(null); setDialogOpen(true); } : undefined}
-      >
-        <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="draft">Draft</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="expired">Expired</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </PageHeader>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Contracts</h1>
+          <p className="text-muted-foreground">Manage workforce contracts.</p>
+        </div>
+        <button
+          onClick={openAddModal}
+          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+        >
+          + Add Contract
+        </button>
+      </div>
 
-      <DataTable
-        columns={columns}
-        data={filtered}
-        isLoading={isLoading}
-        onRowClick={canWrite ? (r) => { setEditing(r); setDialogOpen(true); } : undefined}
-        emptyMessage="No contracts found."
-      />
+      <div className="rounded-2xl border overflow-hidden bg-card">
+        {isLoading ? (
+          <div className="p-6">Loading contracts...</div>
+        ) : error ? (
+          <div className="p-6 text-red-600">{error.message}</div>
+        ) : contracts.length === 0 ? (
+          <div className="p-6 text-muted-foreground">No contracts yet.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                {tableColumns.map((col) => (
+                  <th key={col.field_key} className="px-4 py-3 text-left">
+                    {col.field_label}
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((row) => (
+                <tr key={row.id} className="border-t">
+                  {tableColumns.map((col) => (
+                    <td key={col.field_key} className="px-4 py-3">
+                      {renderCellValue(row, col.field_key)}
+                    </td>
+                  ))}
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to delete this record?")) {
+                            deleteMutation.mutate(row.id);
+                          }
+                        }}
+                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {canWrite && (
-        <EntityFormDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          title={editing ? 'Edit Contract' : 'New Contract'}
-          fields={fields}
-          initialData={editing}
-          onSubmit={handleSubmit}
-          isSubmitting={createMutation.isPending || updateMutation.isPending}
-        />
-      )}
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Contract" : "Add Contract"}>
+        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
+          {formColumns.map((field) => (
+            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
+              <label className="block text-sm mb-1">
+                {field.field_label}
+                {field.required && <span className="text-red-500 ml-1">*</span>}
+              </label>
+              <DynamicField
+                field={field}
+                value={form[field.field_key]}
+                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
+              />
+            </div>
+          ))}
+          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
+              Cancel
+            </button>
+            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
+              {editingId ? "Update Contract" : "Save Contract"}
+            </button>
+          </div>
+        </form>
+      </RecordFormModal>
     </div>
   );
 }

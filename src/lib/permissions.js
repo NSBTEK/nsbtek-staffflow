@@ -150,6 +150,7 @@ export function getEffectivePermissions(user) {
   const roleDefaults = rolePermissions[user.role] || {};
   const moduleAccess = user.module_access || {};
   const explicitPermissions = user.permissions || {};
+  const roleGroupPermissions = user.role_group_permissions || {};
 
   const normalizedModuleAccess = Object.fromEntries(
     Object.entries(moduleAccess).map(([key, value]) => {
@@ -161,6 +162,7 @@ export function getEffectivePermissions(user) {
 
   return {
     ...roleDefaults,
+    ...roleGroupPermissions,
     ...normalizedModuleAccess,
     ...explicitPermissions,
   };

@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import { canView } from "@/lib/permissions";
+import logo from "@/assets/logo.png";
 
 const navSections = [
   {
@@ -81,6 +82,7 @@ const navSections = [
     label: "Admin Setup",
     items: [
       { icon: ShieldCheck, label: "Users", path: "/admin/users", module: "users" },
+      { icon: ShieldCheck, label: "Role Groups", path: "/admin/role-groups", module: "users" },
       { icon: Columns3, label: "Columns", path: "/admin/columns", module: "columns" },
       { icon: Plug, label: "Integrations", path: "/admin/integrations", module: "integrations" },
     ],
@@ -89,7 +91,7 @@ const navSections = [
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user } = useCurrentUser();
+  const { user, isLoading } = useCurrentUser();
 
   const visibleSections = useMemo(() => {
     return navSections
@@ -100,15 +102,9 @@ export default function Sidebar() {
       .filter((section) => section.items.length > 0);
   }, [user]);
 
-  const initialOpen = useMemo(() => {
-    const state = {};
-    visibleSections.forEach((section) => {
-      state[section.label] = true;
-    });
-    return state;
-  }, [visibleSections]);
-
-  const [openSections, setOpenSections] = useState(initialOpen);
+  const [openSections, setOpenSections] = useState(() =>
+    Object.fromEntries(navSections.map((s) => [s.label, true]))
+  );
 
   const toggleSection = (label) => {
     setOpenSections((prev) => ({
@@ -117,11 +113,32 @@ export default function Sidebar() {
     }));
   };
 
+  if (isLoading) {
+    return (
+      <aside className="w-72 shrink-0 border-r border-border bg-slate-950 text-slate-200 h-screen sticky top-0 overflow-y-auto">
+        <div className="p-5 text-sm text-white/70">Loading navigation...</div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="w-72 shrink-0 border-r border-border bg-[hsl(var(--sidebar-background,228_40%_14%))] text-[hsl(var(--sidebar-foreground,220_20%_88%))] h-screen sticky top-0 overflow-y-auto">
+    <aside className="w-72 shrink-0 border-r border-border bg-slate-950 text-slate-200 h-screen sticky top-0 overflow-y-auto">
       <div className="px-5 py-5 border-b border-white/10">
-        <div className="text-xl font-bold text-white">NSBTEK</div>
-        <div className="text-xs text-white/50 mt-1">
+        <div className="flex items-center gap-3">
+          <img
+            src={logo}
+            alt="NSBTEK Logo"
+            className="h-10 w-auto object-contain"
+          />
+          <div>
+            <div className="text-base font-bold text-white leading-tight">NSBTEK</div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-blue-300">
+              StaffFlow
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 text-xs text-white/50">
           {user?.full_name || user?.email || "User"}
         </div>
         <div className="text-[11px] uppercase tracking-wider text-blue-300 mt-1">
@@ -149,7 +166,9 @@ export default function Sidebar() {
               <div className="mt-1 space-y-1">
                 {section.items.map((item) => {
                   const Icon = item.icon;
-                  const active = location.pathname === item.path;
+                  const active =
+                    location.pathname === item.path ||
+                    location.pathname.startsWith(`${item.path}/`);
 
                   return (
                     <Link

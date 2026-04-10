@@ -1,291 +1,496 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from "../lib/base44Stub";
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import StatusBadge from '@/components/shared/StatusBadge';
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  DollarSign, FileText, Building2, CheckCircle, Clock, Send,
-  TrendingUp, Download, Plus, Eye, AlertCircle, Search
-} from 'lucide-react';
-import { format, addDays } from 'date-fns';
-import { useCurrentUser } from '@/lib/useCurrentUser';
-import { toast } from 'sonner';
+  DollarSign,
+  FileText,
+  Building2,
+  CheckCircle,
+  Clock,
+  Send,
+  TrendingUp,
+  Plus,
+  Eye,
+  AlertCircle,
+  Search,
+} from "lucide-react";
+import { format, addDays } from "date-fns";
+import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { getProfileOrThrow } from "@/lib/profile";
+import { listInvoices, createInvoice, updateInvoice, deleteInvoice } from "@/api/invoices";
+import { toast } from "sonner";
 
-const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'disputed'];
+const INVOICE_STATUSES = ["draft", "sent", "paid", "overdue", "disputed"];
 
 function generateInvoiceNumber() {
   const now = new Date();
-  return `INV-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+  return `INV-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    Math.floor(Math.random() * 9000) + 1000
+  )}`;
+}
+
+async function listTimesheetsForBilling(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
+
+  const { data, error } = await supabase
+    .from("timesheets")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function listClientsForBilling(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
+
+  const { data, error } = await supabase
+    .from("clients")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function listPlacementsForBilling(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
+
+  const { data, error } = await supabase
+    .from("placements")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+function StatCard({ title, value, icon: Icon }) {
+  return (
+    <Card>
+      <CardContent className="p-5 flex items-center justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">{title}</p>
+          <p className="text-3xl font-semibold mt-1">{value}</p>
+        </div>
+        <div className="h-11 w-11 rounded-xl bg-blue-50 text-blue-600 grid place-items-center">
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function ClientBilling() {
-  const { user } = useCurrentUser();
+  const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [viewOpen, setViewOpen] = useState(false);
 
-  const { data: timesheets = [] } = useQuery({ queryKey: ['timesheets'], queryFn: () => base44.entities.Timesheet.list() });
-  const { data: clients = [] } = useQuery({ queryKey: ['clients'], queryFn: () => base44.entities.Client.list() });
-  const { data: placements = [] } = useQuery({ queryKey: ['placements'], queryFn: () => base44.entities.Placement.list() });
-  const { data: invoices = [], isLoading } = useQuery({
-    queryKey: ['invoices'],
-    queryFn: () => Promise.resolve([]),
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  const [form, setForm] = useState({
+    invoice_number: generateInvoiceNumber(),
+    client_name: "",
+    amount: "",
+    status: "draft",
+    due_date: format(addDays(new Date(), 14), "yyyy-MM-dd"),
+    notes: "",
   });
 
-  // Build billing summary from approved/invoiced timesheets grouped by client
+  const { data: timesheets = [] } = useQuery({
+    queryKey: ["billing-timesheets", authUser?.id],
+    queryFn: () => listTimesheetsForBilling(authUser),
+    enabled: !!authUser?.id,
+  });
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ["billing-clients", authUser?.id],
+    queryFn: () => listClientsForBilling(authUser),
+    enabled: !!authUser?.id,
+  });
+
+  const { data: placements = [] } = useQuery({
+    queryKey: ["billing-placements", authUser?.id],
+    queryFn: () => listPlacementsForBilling(authUser),
+    enabled: !!authUser?.id,
+  });
+
+  const { data: invoices = [], isLoading } = useQuery({
+    queryKey: ["invoices", authUser?.id],
+    queryFn: () => listInvoices(authUser),
+    enabled: !!authUser?.id,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload) => createInvoice(payload, authUser),
+    onSuccess: async () => {
+      toast.success("Invoice created");
+      setInvoiceOpen(false);
+      setForm({
+        invoice_number: generateInvoiceNumber(),
+        client_name: "",
+        amount: "",
+        status: "draft",
+        due_date: format(addDays(new Date(), 14), "yyyy-MM-dd"),
+        notes: "",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["invoices", authUser?.id] });
+    },
+    onError: (error) => toast.error(error.message || "Failed to create invoice"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }) => updateInvoice(id, payload, authUser),
+    onSuccess: async () => {
+      toast.success("Invoice updated");
+      setInvoiceOpen(false);
+      setSelectedInvoice(null);
+      await queryClient.invalidateQueries({ queryKey: ["invoices", authUser?.id] });
+    },
+    onError: (error) => toast.error(error.message || "Failed to update invoice"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteInvoice,
+    onSuccess: async () => {
+      toast.success("Invoice deleted");
+      await queryClient.invalidateQueries({ queryKey: ["invoices", authUser?.id] });
+    },
+    onError: (error) => toast.error(error.message || "Failed to delete invoice"),
+  });
+
   const billingData = useMemo(() => {
     const grouped = {};
-    timesheets.filter(t => ['approved', 'invoiced'].includes(t.status)).forEach(ts => {
-      const key = ts.client_name || 'Unknown Client';
-      if (!grouped[key]) grouped[key] = { client_name: key, records: [], total_hours: 0, total_amount: 0, total_pay: 0 };
-      const hours = (ts.monday_hours || 0) + (ts.tuesday_hours || 0) + (ts.wednesday_hours || 0) +
-        (ts.thursday_hours || 0) + (ts.friday_hours || 0) + (ts.saturday_hours || 0) + (ts.sunday_hours || 0);
-      const bill = hours * (ts.bill_rate || 0);
-      const pay = hours * (ts.pay_rate || 0);
-      grouped[key].records.push({ ...ts, hours, bill, pay });
-      grouped[key].total_hours += hours;
-      grouped[key].total_amount += bill;
-      grouped[key].total_pay += pay;
+
+    timesheets
+      .filter((t) => ["approved", "invoiced"].includes((t.status || "").toLowerCase()))
+      .forEach((timesheet) => {
+        const clientName =
+          timesheet.client_name ||
+          clients.find((c) => c.id === timesheet.client_id)?.name ||
+          "Unknown Client";
+
+        const hours = Number(timesheet.hours || 0);
+        const rate = Number(timesheet.bill_rate || timesheet.rate || 0);
+        const amount = hours * rate;
+
+        if (!grouped[clientName]) {
+          grouped[clientName] = {
+            client_name: clientName,
+            total_hours: 0,
+            total_amount: 0,
+            timesheet_count: 0,
+          };
+        }
+
+        grouped[clientName].total_hours += hours;
+        grouped[clientName].total_amount += amount;
+        grouped[clientName].timesheet_count += 1;
+      });
+
+    return Object.values(grouped).sort((a, b) => b.total_amount - a.total_amount);
+  }, [timesheets, clients]);
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((invoice) => {
+      const matchesSearch =
+        !search ||
+        invoice.invoice_number?.toLowerCase().includes(search.toLowerCase()) ||
+        invoice.client_name?.toLowerCase().includes(search.toLowerCase());
+
+      const matchesStatus =
+        filterStatus === "all" || invoice.status === filterStatus;
+
+      return matchesSearch && matchesStatus;
     });
-    return Object.values(grouped);
-  }, [timesheets]);
+  }, [invoices, search, filterStatus]);
 
-  const totalRevenue = useMemo(() => billingData.reduce((s, b) => s + b.total_amount, 0), [billingData]);
-  const totalPay = useMemo(() => billingData.reduce((s, b) => s + b.total_pay, 0), [billingData]);
-  const totalMargin = totalRevenue - totalPay;
+  const stats = useMemo(() => {
+    const totalRevenue = invoices
+      .filter((i) => i.status === "paid")
+      .reduce((sum, i) => sum + Number(i.amount || 0), 0);
 
-  const fmt = (n) => `$${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const outstanding = invoices
+      .filter((i) => ["sent", "overdue"].includes(i.status))
+      .reduce((sum, i) => sum + Number(i.amount || 0), 0);
 
-  const filteredBilling = billingData.filter(b =>
-    !search || b.client_name.toLowerCase().includes(search.toLowerCase())
-  );
+    const paidCount = invoices.filter((i) => i.status === "paid").length;
+    const overdueCount = invoices.filter((i) => i.status === "overdue").length;
 
-  const handleGenerateInvoice = (billing) => {
-    setSelectedInvoice({
+    return { totalRevenue, outstanding, paidCount, overdueCount };
+  }, [invoices]);
+
+  const openCreate = () => {
+    setSelectedInvoice(null);
+    setForm({
       invoice_number: generateInvoiceNumber(),
-      client_name: billing.client_name,
-      issue_date: new Date().toISOString().split('T')[0],
-      due_date: addDays(new Date(), 30).toISOString().split('T')[0],
-      line_items: billing.records.map(r => ({
-        description: `${r.employee_name} — ${r.job_title || 'Staffing'} (Week of ${r.week_start ? format(new Date(r.week_start), 'MMM d') : 'N/A'})`,
-        hours: r.hours,
-        rate: r.bill_rate || 0,
-        amount: r.bill,
-      })),
-      subtotal: billing.total_amount,
-      tax_rate: 0,
-      tax_amount: 0,
-      total: billing.total_amount,
-      status: 'draft',
-      payment_terms: 'Net 30',
+      client_name: "",
+      amount: "",
+      status: "draft",
+      due_date: format(addDays(new Date(), 14), "yyyy-MM-dd"),
+      notes: "",
     });
     setInvoiceOpen(true);
   };
 
-  if (user?.role !== 'admin' && user?.role !== 'manager') {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-30" />
-        <p className="text-lg font-medium">Access Restricted</p>
-        <p className="text-sm">Only managers and admins can access client billing.</p>
-      </div>
-    );
+  const openEdit = (invoice) => {
+    setSelectedInvoice(invoice);
+    setForm({
+      invoice_number: invoice.invoice_number || "",
+      client_name: invoice.client_name || "",
+      amount: invoice.amount || "",
+      status: invoice.status || "draft",
+      due_date: invoice.due_date || "",
+      notes: invoice.notes || "",
+    });
+    setInvoiceOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!form.client_name.trim()) {
+      toast.error("Client name is required");
+      return;
+    }
+
+    if (!form.amount || Number(form.amount) <= 0) {
+      toast.error("Amount must be greater than 0");
+      return;
+    }
+
+    if (selectedInvoice?.id) {
+      updateMutation.mutate({ id: selectedInvoice.id, payload: form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading billing...</div>;
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1400px] space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Client Billing Portal</h1>
-          <p className="text-sm text-muted-foreground mt-1">Generate invoices and manage client billing</p>
+          <h1 className="text-2xl font-semibold">Client Billing</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage invoices and review billable timesheet totals.
+          </p>
         </div>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-2" />
+          New Invoice
+        </Button>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Revenue', value: fmt(totalRevenue), icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50' },
-          { label: 'Total Payroll', value: fmt(totalPay), icon: DollarSign, color: 'text-rose-600 bg-rose-50' },
-          { label: 'Gross Margin', value: fmt(totalMargin), icon: CheckCircle, color: 'text-primary bg-primary/10' },
-          { label: 'Active Clients', value: billingData.length, icon: Building2, color: 'text-sky-600 bg-sky-50' },
-        ].map((s, i) => (
-          <Card key={i}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.color}`}>
-                <s.icon className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-xl font-bold">{s.value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Paid Revenue" value={`$${stats.totalRevenue.toFixed(2)}`} icon={DollarSign} />
+        <StatCard title="Outstanding" value={`$${stats.outstanding.toFixed(2)}`} icon={Clock} />
+        <StatCard title="Paid Invoices" value={stats.paidCount} icon={CheckCircle} />
+        <StatCard title="Overdue" value={stats.overdueCount} icon={AlertCircle} />
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input placeholder="Search client..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm w-[220px]" />
-        </div>
-      </div>
-
-      {/* Billing table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 border-b border-border">
-              <tr>
-                {['Client', 'Total Hours', 'Bill Amount', 'Payroll Cost', 'Gross Margin', 'Margin %', 'Actions'].map(h => (
-                  <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {filteredBilling.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground">
-                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p>No billing data. Approve timesheets to generate billing.</p>
-                  </td>
-                </tr>
-              ) : filteredBilling.map((b, i) => {
-                const margin = b.total_amount - b.total_pay;
-                const marginPct = b.total_amount > 0 ? ((margin / b.total_amount) * 100).toFixed(1) : '0.0';
-                return (
-                  <tr key={i} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Building2 className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{b.client_name}</p>
-                          <p className="text-xs text-muted-foreground">{b.records.length} timesheet(s)</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium">{b.total_hours}h</td>
-                    <td className="px-4 py-3 font-semibold text-emerald-600">{fmt(b.total_amount)}</td>
-                    <td className="px-4 py-3 text-rose-500">{fmt(b.total_pay)}</td>
-                    <td className="px-4 py-3 font-bold text-primary">{fmt(margin)}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline" className={parseFloat(marginPct) >= 20 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}>
-                        {marginPct}%
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => handleGenerateInvoice(b)}>
-                        <FileText className="w-3 h-3" /> Generate Invoice
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Invoice preview dialog */}
-      {selectedInvoice && (
-        <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" /> Invoice Preview
-              </DialogTitle>
-            </DialogHeader>
-            <div className="bg-white border border-border rounded-xl p-8 space-y-6 text-sm">
-              {/* Invoice header */}
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-2xl font-black text-primary">INVOICE</p>
-                  <p className="text-muted-foreground text-xs mt-1">{selectedInvoice.invoice_number}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-base">StaffFlow / NSBTek</p>
-                  <p className="text-xs text-muted-foreground">www.nsbtek.com</p>
-                  <Badge variant="outline" className="text-xs mt-1 bg-amber-50 text-amber-700 border-amber-200">
-                    {selectedInvoice.status}
-                  </Badge>
-                </div>
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <CardTitle>Invoices</CardTitle>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search invoices"
+                  className="pl-9 w-[220px]"
+                />
               </div>
-
-              {/* Bill to + dates */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Bill To</p>
-                  <p className="font-semibold">{selectedInvoice.client_name}</p>
-                </div>
-                <div className="text-right">
-                  <div className="space-y-1">
-                    <div className="flex justify-end gap-4 text-xs">
-                      <span className="text-muted-foreground">Issue Date:</span>
-                      <span className="font-medium">{format(new Date(selectedInvoice.issue_date), 'MMM d, yyyy')}</span>
-                    </div>
-                    <div className="flex justify-end gap-4 text-xs">
-                      <span className="text-muted-foreground">Due Date:</span>
-                      <span className="font-medium text-amber-600">{format(new Date(selectedInvoice.due_date), 'MMM d, yyyy')}</span>
-                    </div>
-                    <div className="flex justify-end gap-4 text-xs">
-                      <span className="text-muted-foreground">Terms:</span>
-                      <span className="font-medium">{selectedInvoice.payment_terms}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Line items */}
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-muted/50 border-b border-border">
-                    <th className="text-left py-2 px-3 font-semibold text-muted-foreground">Description</th>
-                    <th className="text-right py-2 px-3 font-semibold text-muted-foreground">Hours</th>
-                    <th className="text-right py-2 px-3 font-semibold text-muted-foreground">Rate</th>
-                    <th className="text-right py-2 px-3 font-semibold text-muted-foreground">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/30">
-                  {selectedInvoice.line_items.map((item, i) => (
-                    <tr key={i}>
-                      <td className="py-2 px-3">{item.description}</td>
-                      <td className="py-2 px-3 text-right">{item.hours}h</td>
-                      <td className="py-2 px-3 text-right">${item.rate}/hr</td>
-                      <td className="py-2 px-3 text-right font-medium">${item.amount.toFixed(2)}</td>
-                    </tr>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {INVOICE_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
                   ))}
-                </tbody>
-              </table>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardHeader>
 
-              {/* Total */}
-              <div className="flex justify-end">
-                <div className="w-48 space-y-1 text-xs">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>${selectedInvoice.subtotal.toFixed(2)}</span></div>
-                  <div className="flex justify-between border-t pt-1 font-bold text-sm">
-                    <span>TOTAL DUE</span><span className="text-primary">${selectedInvoice.total.toFixed(2)}</span>
+          <CardContent className="space-y-3">
+            {filteredInvoices.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No invoices found.</div>
+            ) : (
+              filteredInvoices.map((invoice) => (
+                <div key={invoice.id} className="rounded-xl border p-4 flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="font-medium">{invoice.invoice_number}</div>
+                    <div className="text-sm text-muted-foreground">{invoice.client_name}</div>
+                    <div className="text-sm text-muted-foreground">
+                      Due: {invoice.due_date ? format(new Date(invoice.due_date), "MMM d, yyyy") : "—"}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="font-semibold">${Number(invoice.amount || 0).toFixed(2)}</div>
+                      <Badge variant="outline">{invoice.status}</Badge>
+                    </div>
+                    <Button variant="outline" size="icon" onClick={() => { setSelectedInvoice(invoice); setViewOpen(true); }}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" onClick={() => openEdit(invoice)}>
+                      Edit
+                    </Button>
+                    <Button variant="destructive" onClick={() => deleteMutation.mutate(invoice.id)}>
+                      Delete
+                    </Button>
                   </div>
                 </div>
-              </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Billable summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {billingData.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No approved or invoiced timesheets found.</div>
+            ) : (
+              billingData.map((item) => (
+                <div key={item.client_name} className="rounded-xl border p-4">
+                  <div className="font-medium">{item.client_name}</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {item.timesheet_count} timesheets · {item.total_hours.toFixed(2)} hours
+                  </div>
+                  <div className="mt-2 font-semibold">${item.total_amount.toFixed(2)}</div>
+                </div>
+              ))
+            )}
+
+            <div className="pt-4 border-t text-sm text-muted-foreground">
+              Placements in system: <span className="font-medium text-foreground">{placements.length}</span>
             </div>
-            <DialogFooter className="mt-2">
-              <Button variant="outline" onClick={() => setInvoiceOpen(false)}>Close</Button>
-              <Button className="gap-2" onClick={() => { toast.success('Invoice sent to client!'); setInvoiceOpen(false); }}>
-                <Send className="w-4 h-4" /> Send to Client
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedInvoice ? "Edit Invoice" : "Create Invoice"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Invoice Number</label>
+              <Input
+                value={form.invoice_number}
+                onChange={(e) => setForm((s) => ({ ...s, invoice_number: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Client Name</label>
+              <Input
+                value={form.client_name}
+                onChange={(e) => setForm((s) => ({ ...s, client_name: e.target.value }))}
+                placeholder="Client name"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Amount</label>
+              <Input
+                type="number"
+                value={form.amount}
+                onChange={(e) => setForm((s) => ({ ...s, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Status</label>
+              <Select value={form.status} onValueChange={(value) => setForm((s) => ({ ...s, status: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVOICE_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Due Date</label>
+              <Input
+                type="date"
+                value={form.due_date}
+                onChange={(e) => setForm((s) => ({ ...s, due_date: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Notes</label>
+              <Input
+                value={form.notes}
+                onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvoiceOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invoice Details</DialogTitle>
+          </DialogHeader>
+
+          {selectedInvoice && (
+            <div className="space-y-3 text-sm">
+              <div><span className="font-medium">Invoice:</span> {selectedInvoice.invoice_number}</div>
+              <div><span className="font-medium">Client:</span> {selectedInvoice.client_name}</div>
+              <div><span className="font-medium">Amount:</span> ${Number(selectedInvoice.amount || 0).toFixed(2)}</div>
+              <div><span className="font-medium">Status:</span> {selectedInvoice.status}</div>
+              <div><span className="font-medium">Due Date:</span> {selectedInvoice.due_date || "—"}</div>
+              <div><span className="font-medium">Notes:</span> {selectedInvoice.notes || "—"}</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

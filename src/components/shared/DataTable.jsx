@@ -1,122 +1,123 @@
-import React, { useState, useMemo } from 'react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useMemo, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-export default function DataTable({ columns, data, isLoading, onRowClick, emptyMessage }) {
-  const [sortCol, setSortCol] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');
+export default function DataTable({
+  data = [],
+  columns = [],
+  onEdit,
+  onDelete,
+  selectable = true,
+  rowKey = "id",
+}) {
+  const [selectedRows, setSelectedRows] = useState([]);
 
-  const handleSort = (col) => {
-    if (!col.sortKey) return;
-    if (sortCol === col.sortKey) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortCol(col.sortKey);
-      setSortDir('asc');
-    }
+  const allIds = useMemo(() => data.map((row) => row[rowKey]), [data, rowKey]);
+  const allSelected = allIds.length > 0 && selectedRows.length === allIds.length;
+
+  const toggleAll = () => {
+    setSelectedRows(allSelected ? [] : allIds);
   };
 
-  const sortedData = React.useMemo(() => {
-    if (!sortCol) return data;
-    return [...data].sort((a, b) => {
-      const av = a[sortCol] ?? '';
-      const bv = b[sortCol] ?? '';
-      const cmp = typeof av === 'number'
-        ? av - bv
-        : String(av).localeCompare(String(bv));
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [data, sortCol, sortDir]);
-
-  const renderSortIcon = (col) => {
-    if (!col.sortKey) return null;
-    if (sortCol !== col.sortKey) return <ChevronsUpDown className="w-3 h-3 ml-1 text-muted-foreground/50" />;
-    return sortDir === 'asc'
-      ? <ArrowUp className="w-3 h-3 ml-1 text-primary" />
-      : <ArrowDown className="w-3 h-3 ml-1 text-primary" />;
-  };
-
-  if (isLoading) {
-    return (
-      <Card className="overflow-hidden border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              {columns.map((col, i) => (
-                <TableHead key={i} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 py-3">
-                  {col.header}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array(5).fill(0).map((_, i) => (
-              <TableRow key={i} className="border-b border-border/50">
-                {columns.map((_, j) => (
-                  <TableCell key={j} className="py-3"><Skeleton className="h-4 w-24" /></TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+  const toggleOne = (id) => {
+    setSelectedRows((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
-  }
+  };
 
   return (
-    <Card className="overflow-hidden border shadow-sm">
+    <div className="rounded-2xl border border-border overflow-hidden bg-card">
       <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40 border-b border-border">
-              {columns.map((col, i) => (
-                <TableHead
-                  key={i}
-                  onClick={() => handleSort(col)}
-                  className={cn(
-                    "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 py-3 select-none",
-                    col.sortKey && "cursor-pointer hover:text-foreground"
-                  )}
-                >
-                  <div className="flex items-center">
-                    {col.header}
-                    {renderSortIcon(col)}
-                  </div>
-                </TableHead>
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              {selectable && (
+                <th className="px-4 py-3 text-left w-12">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                  />
+                </th>
+              )}
+
+              {columns.map((col) => (
+                <th key={col.key} className="px-4 py-3 text-left font-semibold text-foreground">
+                  {col.label}
+                </th>
               ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-14 text-muted-foreground text-sm">
-                  {emptyMessage || 'No data found'}
-                </TableCell>
-              </TableRow>
-            ) : (
-              sortedData.map((row, i) => (
-                <TableRow
-                  key={row.id || i}
-                  onClick={() => onRowClick?.(row)}
-                  className={cn(
-                    "border-b border-border/50 transition-colors",
-                    onRowClick && "cursor-pointer hover:bg-muted/30"
-                  )}
+
+              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {data.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length + (selectable ? 2 : 1)}
+                  className="px-4 py-10 text-center text-muted-foreground"
                 >
-                  {columns.map((col, j) => (
-                    <TableCell key={j} className="text-sm py-3">
-                      {col.render ? col.render(row) : row[col.accessor]}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+                  No records found
+                </td>
+              </tr>
+            ) : (
+              data.map((row) => {
+                const id = row[rowKey];
+                const selected = selectedRows.includes(id);
+
+                return (
+                  <tr
+                    key={id}
+                    className={cn(
+                      "border-t border-border",
+                      selected && "bg-primary/5"
+                    )}
+                  >
+                    {selectable && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleOne(id)}
+                        />
+                      </td>
+                    )}
+
+                    {columns.map((col) => (
+                      <td key={col.key} className="px-4 py-3 align-top">
+                        {col.render ? col.render(row[col.key], row) : row[col.key] ?? "-"}
+                      </td>
+                    ))}
+
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onEdit?.(row)}
+                          className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 hover:bg-muted"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => onDelete?.(row)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 text-red-600 px-3 py-1.5 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
-    </Card>
+    </div>
   );
 }

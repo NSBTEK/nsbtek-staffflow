@@ -1,384 +1,407 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from "../../lib/base44Stub";
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Shield, Eye, EyeOff, Plus, Trash2, Save } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useCurrentUser } from '@/lib/useCurrentUser';
-import { toast } from 'sonner';
+import React, { useMemo, useState } from "react";
+import { useAuth } from "@/lib/AuthContext";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createColumnConfig,
+  deleteColumnConfig,
+  listColumnConfigs,
+  updateColumnConfig,
+} from "@/api/columnConfigs";
+import RecordFormModal from "@/components/shared/RecordFormModal";
 
-const SECTIONS = [
-  {
-    label: 'ATS',
-    modules: [
-      { key: 'jobs', label: 'Jobs', defaultColumns: [
-        { key: 'title', label: 'Title', visible: true },
-        { key: 'client', label: 'Client', visible: true },
-        { key: 'location', label: 'Location', visible: true },
-        { key: 'job_type', label: 'Type', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'priority', label: 'Priority', visible: true },
-        { key: 'positions', label: 'Positions', visible: true },
-        { key: 'created_date', label: 'Created', visible: true },
-      ]},
-      { key: 'candidates', label: 'Candidates', defaultColumns: [
-        { key: 'name', label: 'Name', visible: true },
-        { key: 'email', label: 'Email', visible: true },
-        { key: 'current_title', label: 'Title', visible: true },
-        { key: 'skills', label: 'Skills', visible: true },
-        { key: 'experience_years', label: 'Experience', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'source', label: 'Source', visible: true },
-        { key: 'visa_status', label: 'Visa', visible: true },
-      ]},
-      { key: 'submissions', label: 'Submissions', defaultColumns: [
-        { key: 'candidate_name', label: 'Candidate', visible: true },
-        { key: 'job_title', label: 'Job', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'submitted_rate', label: 'Rate', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'submission_date', label: 'Date', visible: true },
-      ]},
-      { key: 'interviews', label: 'Interviews', defaultColumns: [
-        { key: 'candidate_name', label: 'Candidate', visible: true },
-        { key: 'job_title', label: 'Job', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'interview_date', label: 'Date', visible: true },
-        { key: 'interview_type', label: 'Type', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'rating', label: 'Rating', visible: true },
-      ]},
-      { key: 'placements', label: 'Placements', defaultColumns: [
-        { key: 'candidate_name', label: 'Candidate', visible: true },
-        { key: 'job_title', label: 'Job', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'start_date', label: 'Start', visible: true },
-        { key: 'end_date', label: 'End', visible: true },
-        { key: 'bill_rate', label: 'Bill Rate', visible: true },
-        { key: 'placement_type', label: 'Type', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-    ]
-  },
-  {
-    label: 'CRM',
-    modules: [
-      { key: 'clients', label: 'Clients', defaultColumns: [
-        { key: 'company_name', label: 'Company', visible: true },
-        { key: 'industry', label: 'Industry', visible: true },
-        { key: 'city', label: 'City', visible: true },
-        { key: 'state', label: 'State', visible: true },
-        { key: 'type', label: 'Type', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'payment_terms', label: 'Payment Terms', visible: true },
-      ]},
-      { key: 'contacts', label: 'Contacts', defaultColumns: [
-        { key: 'name', label: 'Name', visible: true },
-        { key: 'email', label: 'Email', visible: true },
-        { key: 'phone', label: 'Phone', visible: true },
-        { key: 'title', label: 'Title', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'type', label: 'Type', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-      { key: 'activities', label: 'Activities', defaultColumns: [
-        { key: 'subject', label: 'Subject', visible: true },
-        { key: 'type', label: 'Type', visible: true },
-        { key: 'related_to', label: 'Related To', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-        { key: 'priority', label: 'Priority', visible: true },
-        { key: 'due_date', label: 'Due Date', visible: true },
-      ]},
-    ]
-  },
-  {
-    label: 'Workforce',
-    modules: [
-      { key: 'timesheets', label: 'Timesheets', defaultColumns: [
-        { key: 'employee_name', label: 'Employee', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'week_start', label: 'Week Of', visible: true },
-        { key: 'total_hours', label: 'Total Hours', visible: true },
-        { key: 'bill_rate', label: 'Bill Rate', visible: true },
-        { key: 'pay_rate', label: 'Pay Rate', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-      { key: 'expenses', label: 'Expenses', defaultColumns: [
-        { key: 'employee_name', label: 'Employee', visible: true },
-        { key: 'expense_date', label: 'Date', visible: true },
-        { key: 'category', label: 'Category', visible: true },
-        { key: 'description', label: 'Description', visible: true },
-        { key: 'amount', label: 'Amount', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-      { key: 'contracts', label: 'Contracts', defaultColumns: [
-        { key: 'employee_name', label: 'Employee', visible: true },
-        { key: 'client_name', label: 'Client', visible: true },
-        { key: 'job_title', label: 'Job Title', visible: true },
-        { key: 'contract_type', label: 'Type', visible: true },
-        { key: 'start_date', label: 'Start', visible: true },
-        { key: 'end_date', label: 'End', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-      { key: 'onboarding', label: 'Onboarding', defaultColumns: [
-        { key: 'employee_name', label: 'Employee', visible: true },
-        { key: 'task_name', label: 'Task', visible: true },
-        { key: 'category', label: 'Category', visible: true },
-        { key: 'due_date', label: 'Due Date', visible: true },
-        { key: 'assigned_to', label: 'Assigned To', visible: true },
-        { key: 'status', label: 'Status', visible: true },
-      ]},
-    ]
-  }
+const MODULE_OPTIONS = [
+  { value: "clients", label: "Clients" },
+  { value: "contacts", label: "Contacts" },
+  { value: "candidates", label: "Candidates" },
+  { value: "jobs", label: "Jobs" },
+  { value: "submissions", label: "Submissions" },
+  { value: "interviews", label: "Interviews" },
+  { value: "placements", label: "Placements" },
+  { value: "timesheets", label: "Timesheets" },
+  { value: "expenses", label: "Expenses" },
+  { value: "contracts", label: "Contracts" },
+  { value: "onboarding", label: "Onboarding" },
+  { value: "payroll", label: "Payroll" },
 ];
 
-const ALL_MODULES = SECTIONS.flatMap(s => s.modules);
+const FIELD_TYPE_OPTIONS = [
+  { value: "text", label: "Text" },
+  { value: "textarea", label: "Textarea" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "datetime", label: "Date Time" },
+  { value: "select", label: "Dropdown" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "url", label: "URL" },
+];
 
-function ColumnEditor({ module, config, onChange }) {
-  const cols = config || module.defaultColumns;
-
-  const [dragIndex, setDragIndex] = React.useState(null);
-
-  const handleDragStart = (index) => {
-    setDragIndex(index);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault(); // required to allow drop
-  };
-
-  const handleDrop = (index) => {
-    if (dragIndex === null || dragIndex === index) return;
-
-    const newCols = [...cols];
-    const [moved] = newCols.splice(dragIndex, 1);
-    newCols.splice(index, 0, moved);
-
-    setDragIndex(null);
-    onChange(newCols);
-  };
-
-  const toggle = (i) =>
-    onChange(cols.map((c, idx) => (idx === i ? { ...c, visible: !c.visible } : c)));
-
-  const rename = (i, label) =>
-    onChange(cols.map((c, idx) => (idx === i ? { ...c, label } : c)));
-
-  const remove = (i) =>
-    onChange(cols.filter((_, idx) => idx !== i));
-
-  const addColumn = () =>
-    onChange([
-      ...cols,
-      {
-        key: `custom_${Date.now()}`,
-        label: "New Column",
-        visible: true,
-        custom: true,
-      },
-    ]);
-
-  return (
-    <div className="space-y-2">
-      <div className="space-y-1.5">
-        {cols.map((col, i) => (
-          <div
-            key={col.key}
-            draggable
-            onDragStart={() => handleDragStart(i)}
-            onDragOver={handleDragOver}
-            onDrop={() => handleDrop(i)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-lg border bg-background transition-all",
-              dragIndex === i && "opacity-30",
-              !col.visible && "opacity-50"
-            )}
-          >
-            {/* Drag Handle */}
-            <div className="cursor-grab text-muted-foreground">
-              <svg
-                className="w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="9" cy="5" r="1" />
-                <circle cx="9" cy="12" r="1" />
-                <circle cx="9" cy="19" r="1" />
-                <circle cx="15" cy="5" r="1" />
-                <circle cx="15" cy="12" r="1" />
-                <circle cx="15" cy="19" r="1" />
-              </svg>
-            </div>
-
-            <Input
-              value={col.label}
-              onChange={(e) => rename(i, e.target.value)}
-              className="h-7 text-sm flex-1 border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-            />
-
-            <span className="text-[10px] text-muted-foreground/40 font-mono hidden sm:block">
-              {col.key}
-            </span>
-
-            <button
-              onClick={() => toggle(i)}
-              className={cn(
-                "p-1 rounded",
-                col.visible ? "text-primary" : "text-muted-foreground/40"
-              )}
-            >
-              {col.visible ? (
-                <Eye className="w-3.5 h-3.5" />
-              ) : (
-                <EyeOff className="w-3.5 h-3.5" />
-              )}
-            </button>
-
-            {col.custom && (
-              <button
-                onClick={() => remove(i)}
-                className="p-1 rounded text-destructive/60 hover:text-destructive"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={addColumn}
-        className="gap-1.5 text-xs"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add Column
-      </Button>
-    </div>
-  );
+function makeFieldKey(label = "") {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 export default function ColumnSettings() {
-  const { user: currentUser } = useCurrentUser();
+  const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState('ATS');
-  const [activeModule, setActiveModule] = useState('jobs');
-  const [localConfigs, setLocalConfigs] = useState({});
 
-  const { data: savedConfigs = [] } = useQuery({
-    queryKey: ['ats-column-configs'],
-    queryFn: () => base44.entities.ATSColumnConfig.list(),
+  const [selectedModule, setSelectedModule] = useState("clients");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const [form, setForm] = useState({
+    module: "clients",
+    field_key: "",
+    field_label: "",
+    field_type: "text",
+    visible_in_table: true,
+    visible_in_form: true,
+    required: false,
+    is_system: false,
+    is_active: true,
+    sort_order: 0,
   });
 
-  useEffect(() => {
-    const map = {};
-    savedConfigs.forEach(c => {
-      try { map[c.module] = { id: c.id, columns: JSON.parse(c.columns || '[]') }; } catch {}
-    });
-    setLocalConfigs(map);
-  }, [savedConfigs]);
+  const {
+    data: rows = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["column-configs", selectedModule],
+    queryFn: () => listColumnConfigs(selectedModule),
+  });
 
-  const saveMutation = useMutation({
-    mutationFn: async ({ module, columns, existingId }) => {
-      const payload = { module, columns: JSON.stringify(columns) };
-      if (existingId) return base44.entities.ATSColumnConfig.update(existingId, payload);
-      return base44.entities.ATSColumnConfig.create(payload);
-    },
+  const createMutation = useMutation({
+    mutationFn: (payload) => createColumnConfig(payload, authUser),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ats-column-configs'] });
-      toast.success('Column settings saved');
+      queryClient.invalidateQueries({ queryKey: ["column-configs", selectedModule] });
+      resetForm();
+      setOpen(false);
     },
   });
 
-  const handleSave = () => {
-    const mod = ALL_MODULES.find(m => m.key === activeModule);
-    const cols = localConfigs[activeModule]?.columns || mod.defaultColumns;
-    saveMutation.mutate({ module: activeModule, columns: cols, existingId: localConfigs[activeModule]?.id });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }) => updateColumnConfig(id, payload, authUser),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["column-configs", selectedModule] });
+      resetForm();
+      setOpen(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteColumnConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["column-configs", selectedModule] });
+    },
+  });
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  }, [rows]);
+
+  const resetForm = () => {
+    setEditing(null);
+    setForm({
+      module: selectedModule,
+      field_key: "",
+      field_label: "",
+      field_type: "text",
+      visible_in_table: true,
+      visible_in_form: true,
+      required: false,
+      is_system: false,
+      is_active: true,
+      sort_order: sortedRows.length + 1,
+    });
   };
 
-  const handleReset = () => {
-    const mod = ALL_MODULES.find(m => m.key === activeModule);
-    setLocalConfigs(p => ({ ...p, [activeModule]: { ...p[activeModule], columns: mod.defaultColumns } }));
+  const openAddModal = () => {
+    resetForm();
+    setOpen(true);
   };
 
-  if (currentUser?.role !== 'admin') {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        <Shield className="w-12 h-12 mx-auto mb-4 opacity-30" />
-        <p className="text-lg font-medium">Access Restricted</p>
-        <p className="text-sm">Only admins can configure column settings.</p>
-      </div>
-    );
-  }
+  const openEditModal = (row) => {
+    setEditing(row);
+    setForm({
+      module: row.module,
+      field_key: row.field_key || "",
+      field_label: row.field_label || "",
+      field_type: row.field_type || "text",
+      visible_in_table: !!row.visible_in_table,
+      visible_in_form: !!row.visible_in_form,
+      required: !!row.required,
+      is_system: !!row.is_system,
+      is_active: !!row.is_active,
+      sort_order: row.sort_order ?? 0,
+    });
+    setOpen(true);
+  };
 
-  const activeMod = ALL_MODULES.find(m => m.key === activeModule);
-  const activeCols = localConfigs[activeModule]?.columns || activeMod?.defaultColumns || [];
-  const currentSection = SECTIONS.find(s => s.label === activeSection);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    const payload = {
+      ...form,
+      field_key: form.field_key || makeFieldKey(form.field_label),
+      sort_order: Number(form.sort_order || 0),
+    };
+
+    if (editing) {
+      updateMutation.mutate({
+        id: editing.id,
+        payload,
+      });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const moveRow = (row, direction) => {
+    const currentIndex = sortedRows.findIndex((x) => x.id === row.id);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= sortedRows.length) return;
+
+    const current = sortedRows[currentIndex];
+    const target = sortedRows[targetIndex];
+
+    updateMutation.mutate({
+      id: current.id,
+      payload: { sort_order: target.sort_order },
+    });
+
+    updateMutation.mutate({
+      id: target.id,
+      payload: { sort_order: current.sort_order },
+    });
+  };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1100px]">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Column Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Configure columns for ATS, CRM, and Workforce modules. Drag to reorder, toggle visibility, rename, or add custom columns.</p>
-      </div>
-
-      <div className="flex gap-6">
-        {/* Sidebar: sections + modules */}
-        <div className="w-48 shrink-0 space-y-3">
-          {SECTIONS.map(section => (
-            <div key={section.label}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-1">{section.label}</p>
-              <div className="space-y-0.5">
-                {section.modules.map(m => (
-                  <button
-                    key={m.key}
-                    onClick={() => { setActiveSection(section.label); setActiveModule(m.key); }}
-                    className={cn(
-                      "w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                      activeModule === m.key
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    {m.label}
-                    {localConfigs[m.key] && (
-                      <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide opacity-60">saved</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Column Settings</h1>
+          <p className="text-muted-foreground">
+            Manage visible fields, labels, order, and custom columns by module.
+          </p>
         </div>
 
-        {/* Column editor */}
-        <Card className="flex-1">
-          <CardHeader className="pb-3 border-b flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base">{activeMod?.label} Columns</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">{activeSection} module</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleReset} className="text-xs">Reset</Button>
-              <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending} className="gap-1.5 text-xs">
-                <Save className="w-3.5 h-3.5" />
-                {saveMutation.isPending ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ColumnEditor
-              module={activeMod}
-              config={activeCols}
-              onChange={cols => setLocalConfigs(p => ({ ...p, [activeModule]: { ...p[activeModule], columns: cols } }))}
-            />
-          </CardContent>
-        </Card>
+        <button
+          onClick={openAddModal}
+          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+        >
+          + Add Column
+        </button>
       </div>
+
+      <div className="rounded-2xl border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm font-medium">Module</label>
+          <select
+            value={selectedModule}
+            onChange={(e) => setSelectedModule(e.target.value)}
+            className="rounded-lg border px-3 py-2"
+          >
+            {MODULE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border overflow-hidden bg-card">
+        {isLoading ? (
+          <div className="p-6">Loading column settings...</div>
+        ) : error ? (
+          <div className="p-6 text-red-600">{error.message}</div>
+        ) : sortedRows.length === 0 ? (
+          <div className="p-6 text-muted-foreground">No column settings found for this module.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="px-4 py-3 text-left">Order</th>
+                <th className="px-4 py-3 text-left">Label</th>
+                <th className="px-4 py-3 text-left">Key</th>
+                <th className="px-4 py-3 text-left">Type</th>
+                <th className="px-4 py-3 text-left">Table</th>
+                <th className="px-4 py-3 text-left">Form</th>
+                <th className="px-4 py-3 text-left">Required</th>
+                <th className="px-4 py-3 text-left">System</th>
+                <th className="px-4 py-3 text-left">Active</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((row) => (
+                <tr key={row.id} className="border-t">
+                  <td className="px-4 py-3">{row.sort_order}</td>
+                  <td className="px-4 py-3">{row.field_label}</td>
+                  <td className="px-4 py-3">{row.field_key}</td>
+                  <td className="px-4 py-3 capitalize">{row.field_type}</td>
+                  <td className="px-4 py-3">{row.visible_in_table ? "Yes" : "No"}</td>
+                  <td className="px-4 py-3">{row.visible_in_form ? "Yes" : "No"}</td>
+                  <td className="px-4 py-3">{row.required ? "Yes" : "No"}</td>
+                  <td className="px-4 py-3">{row.is_system ? "Yes" : "No"}</td>
+                  <td className="px-4 py-3">{row.is_active ? "Yes" : "No"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2 flex-wrap">
+                      <button
+                        onClick={() => moveRow(row, "up")}
+                        className="rounded-lg border px-3 py-1.5"
+                      >
+                        Up
+                      </button>
+                      <button
+                        onClick={() => moveRow(row, "down")}
+                        className="rounded-lg border px-3 py-1.5"
+                      >
+                        Down
+                      </button>
+                      <button
+                        onClick={() => openEditModal(row)}
+                        className="rounded-lg border px-3 py-1.5"
+                      >
+                        Edit
+                      </button>
+                      {!row.is_system && (
+                        <button
+                          onClick={() => deleteMutation.mutate(row.id)}
+                          className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <RecordFormModal
+        open={open}
+        onOpenChange={setOpen}
+        title={editing ? "Edit Column" : "Add Column"}
+      >
+        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
+          <select
+            className="border rounded-lg px-3 py-2"
+            value={form.module}
+            onChange={(e) => setForm({ ...form, module: e.target.value })}
+            disabled={!!editing}
+          >
+            {MODULE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+
+          <input
+            className="border rounded-lg px-3 py-2"
+            placeholder="Field Label"
+            value={form.field_label}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                field_label: e.target.value,
+                field_key: editing ? form.field_key : makeFieldKey(e.target.value),
+              })
+            }
+            required
+          />
+
+          <input
+            className="border rounded-lg px-3 py-2"
+            placeholder="Field Key"
+            value={form.field_key}
+            onChange={(e) => setForm({ ...form, field_key: makeFieldKey(e.target.value) })}
+            required
+            disabled={!!form.is_system}
+          />
+
+          <select
+            className="border rounded-lg px-3 py-2"
+            value={form.field_type}
+            onChange={(e) => setForm({ ...form, field_type: e.target.value })}
+          >
+            {FIELD_TYPE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="number"
+            className="border rounded-lg px-3 py-2"
+            placeholder="Sort Order"
+            value={form.sort_order}
+            onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+          />
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.visible_in_table}
+              onChange={(e) => setForm({ ...form, visible_in_table: e.target.checked })}
+            />
+            Visible in Table
+          </label>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.visible_in_form}
+              onChange={(e) => setForm({ ...form, visible_in_form: e.target.checked })}
+            />
+            Visible in Form
+          </label>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.required}
+              onChange={(e) => setForm({ ...form, required: e.target.checked })}
+            />
+            Required
+          </label>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+            />
+            Active
+          </label>
+
+          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg border px-4 py-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 text-white px-4 py-2"
+            >
+              {editing ? "Update Column" : "Save Column"}
+            </button>
+          </div>
+        </form>
+      </RecordFormModal>
     </div>
   );
 }

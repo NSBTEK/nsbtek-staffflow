@@ -1,87 +1,138 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 
-import { AuthProvider } from "./lib/AuthContext";
-import ProtectedRoute from "./components/auth/ProtectedRoute";
-import AppLayout from "./components/layout/AppLayout";
+import { AuthProvider } from "@/lib/AuthContext";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import ProtectedModuleRoute from "@/components/auth/ProtectedModuleRoute";
+import AppLayout from "@/components/layout/AppLayout";
 
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Jobs from "./pages/Jobs";
-import Candidates from "./pages/Candidates";
-import Clients from "./pages/Clients";
-import Contacts from "./pages/Contacts";
-import Submissions from "./pages/Submissions";
-import Interviews from "./pages/Interviews";
-import Placements from "./pages/Placements";
-import Activities from "./pages/Activities";
-import RequestAccess from "./pages/RequestAccess";
-import AIAssistant from "./pages/AIAssistant";
-import ResumeParser from "./pages/ResumeParser";
-import ClientBilling from "./pages/ClientBilling";
+import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import Unauthorized from "@/pages/Unauthorized";
+import Dashboard from "@/pages/Dashboard";
+import Clients from "@/pages/Clients";
+import Contacts from "@/pages/Contacts";
+import Activities from "@/pages/Activities";
+import Jobs from "@/pages/Jobs";
+import Candidates from "@/pages/Candidates";
+import Submissions from "@/pages/Submissions";
+import Interviews from "@/pages/Interviews";
+import Placements from "@/pages/Placements";
+import AIAssistant from "@/pages/AIAssistant";
+import ResumeParser from "@/pages/ResumeParser";
+import ClientBilling from "@/pages/ClientBilling";
+import RequestAccess from "@/pages/RequestAccess";
+import ColumnSettings from "@/pages/admin/ColumnSettings";
+import UserManagement from "@/pages/admin/UserManagement";
+import RoleGroups from "@/pages/admin/RoleGroups";
+import Integrations from "@/pages/admin/Integrations";
+import Timesheets from "@/pages/workforce/Timesheets";
+import Expenses from "@/pages/workforce/Expenses";
+import Contracts from "@/pages/workforce/Contracts";
+import Onboarding from "@/pages/workforce/Onboarding";
+import Payroll from "@/pages/workforce/Payroll";
 
-import UserManagement from "./pages/admin/UserManagement";
-import ColumnSettings from "./pages/admin/ColumnSettings";
-import Integrations from "./pages/admin/Integrations";
+const BASENAME = import.meta.env.BASE_URL;
 
-import Timesheets from "./pages/workforce/Timesheets";
-import Expenses from "./pages/workforce/Expenses";
-import Contracts from "./pages/workforce/Contracts";
-import Onboarding from "./pages/workforce/Onboarding";
-import Payroll from "./pages/workforce/Payroll";
-
-const queryClient = new QueryClient();
-
-function NotFound() {
-  return <div className="p-10 text-xl">404 - Page Not Found</div>;
+function moduleRoute(module, element) {
+  return (
+    <Route element={<ProtectedModuleRoute module={module} />}>
+      <Route element={element} path="" />
+    </Route>
+  );
 }
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
+    <BrowserRouter basename={BASENAME}>
+      <AuthProvider>
+        <Toaster richColors position="top-right" />
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/unauthorized" element={<Unauthorized />} />
 
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AppLayout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/jobs" element={<Jobs />} />
-                <Route path="/candidates" element={<Candidates />} />
-                <Route path="/clients" element={<Clients />} />
-                <Route path="/contacts" element={<Contacts />} />
-                <Route path="/submissions" element={<Submissions />} />
-                <Route path="/interviews" element={<Interviews />} />
-                <Route path="/placements" element={<Placements />} />
-                <Route path="/activities" element={<Activities />} />
-                <Route path="/request-access" element={<RequestAccess />} />
-                <Route path="/ai-assistant" element={<AIAssistant />} />
-                <Route path="/resume-parser" element={<ResumeParser />} />
-                <Route path="/client-billing" element={<ClientBilling />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/dashboard" element={<ProtectedModuleRoute module="dashboard" />}>
+                <Route index element={<Dashboard />} />
+              </Route>
 
-                <Route path="/admin/users" element={<UserManagement />} />
-                <Route path="/admin/columns" element={<ColumnSettings />} />
-                <Route path="/admin/integrations" element={<Integrations />} />
+              <Route path="/clients" element={<ProtectedModuleRoute module="clients" />}>
+                <Route index element={<Clients />} />
+              </Route>
+              <Route path="/contacts" element={<ProtectedModuleRoute module="contacts" />}>
+                <Route index element={<Contacts />} />
+              </Route>
+              <Route path="/activities" element={<ProtectedModuleRoute module="activities" />}>
+                <Route index element={<Activities />} />
+              </Route>
 
-                <Route path="/workforce/timesheets" element={<Timesheets />} />
-                <Route path="/workforce/expenses" element={<Expenses />} />
-                <Route path="/workforce/contracts" element={<Contracts />} />
-                <Route path="/workforce/onboarding" element={<Onboarding />} />
-                <Route path="/workforce/payroll" element={<Payroll />} />
+              <Route path="/jobs" element={<ProtectedModuleRoute module="jobs" />}>
+                <Route index element={<Jobs />} />
+              </Route>
+              <Route path="/candidates" element={<ProtectedModuleRoute module="candidates" />}>
+                <Route index element={<Candidates />} />
+              </Route>
+              <Route path="/submissions" element={<ProtectedModuleRoute module="submissions" />}>
+                <Route index element={<Submissions />} />
+              </Route>
+              <Route path="/interviews" element={<ProtectedModuleRoute module="interviews" />}>
+                <Route index element={<Interviews />} />
+              </Route>
+              <Route path="/placements" element={<ProtectedModuleRoute module="placements" />}>
+                <Route index element={<Placements />} />
+              </Route>
+
+              <Route path="/request-access" element={<ProtectedModuleRoute module="request_access" />}>
+                <Route index element={<RequestAccess />} />
+              </Route>
+
+              <Route path="/workforce/timesheets" element={<ProtectedModuleRoute module="timesheets" />}>
+                <Route index element={<Timesheets />} />
+              </Route>
+              <Route path="/workforce/expenses" element={<ProtectedModuleRoute module="expenses" />}>
+                <Route index element={<Expenses />} />
+              </Route>
+              <Route path="/workforce/contracts" element={<ProtectedModuleRoute module="contracts" />}>
+                <Route index element={<Contracts />} />
+              </Route>
+              <Route path="/workforce/onboarding" element={<ProtectedModuleRoute module="onboarding" />}>
+                <Route index element={<Onboarding />} />
+              </Route>
+              <Route path="/workforce/payroll" element={<ProtectedModuleRoute module="payroll" />}>
+                <Route index element={<Payroll />} />
+              </Route>
+
+              <Route path="/ai-assistant" element={<ProtectedModuleRoute module="ai_assistant" />}>
+                <Route index element={<AIAssistant />} />
+              </Route>
+              <Route path="/resume-parser" element={<ProtectedModuleRoute module="resume_parser" />}>
+                <Route index element={<ResumeParser />} />
+              </Route>
+              <Route path="/client-billing" element={<ProtectedModuleRoute module="client_billing" />}>
+                <Route index element={<ClientBilling />} />
+              </Route>
+
+              <Route path="/admin/users" element={<ProtectedModuleRoute module="users" />}>
+                <Route index element={<UserManagement />} />
+              </Route>
+              <Route path="/admin/role-groups" element={<ProtectedModuleRoute module="users" />}>
+                <Route index element={<RoleGroups />} />
+              </Route>
+              <Route path="/admin/columns" element={<ProtectedModuleRoute module="columns" />}>
+                <Route index element={<ColumnSettings />} />
+              </Route>
+              <Route path="/admin/integrations" element={<ProtectedModuleRoute module="integrations" />}>
+                <Route index element={<Integrations />} />
               </Route>
             </Route>
+          </Route>
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-
-          <Toaster richColors position="top-right" />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
