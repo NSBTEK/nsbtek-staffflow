@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NSBTEK StaffFlow</title>
+    <script>
+      // GitHub Pages SPA redirect for custom domain/root site
+      // Keeps the hash fragment, which Supabase recovery needs.
+      var path = window.location.pathname;
+      var search = window.location.search || "";
+      var hash = window.location.hash || "";
+      var newUrl = "/" + "?p=" + encodeURIComponent(path + search) + hash;
+      window.location.replace(newUrl);
+    </script>
+  </head>
+  <body></body>
+</html>
