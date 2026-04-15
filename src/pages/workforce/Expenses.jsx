@@ -6,6 +6,8 @@ import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { canEdit } from "@/lib/permissions";
 
 async function listExpenses(currentUser) {
   const profile = await getProfileOrThrow(currentUser.id);
@@ -54,6 +56,7 @@ export default function Expenses() {
           organization_id: profile.organization_id,
           created_by: authUser.id,
           updated_by: authUser.id,
+          status: cleanPayload.status || "draft",
         })
         .select()
         .single();
@@ -139,17 +142,19 @@ export default function Expenses() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Expenses</h1>
           <p className="text-muted-foreground">Manage workforce expenses.</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Expense
-        </button>
+        {canEdit(authUser, "expenses") && (
+          <button
+            onClick={openAddModal}
+            className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          >
+            + Add Expense
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl border overflow-hidden bg-card">
@@ -160,46 +165,42 @@ export default function Expenses() {
         ) : expenses.length === 0 ? (
           <div className="p-6 text-muted-foreground">No expenses yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {tableColumns.map((col) => (
-                  <th key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </th>
+                  <TableHead key={col.field_key}>{col.field_label}</TableHead>
                 ))}
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+                {canEdit(authUser, "expenses") && <TableHead className="text-right">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {expenses.map((row) => (
-                <tr key={row.id} className="border-t">
+                <TableRow key={row.id}>
                   {tableColumns.map((col) => (
-                    <td key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(row, col.field_key)}
-                    </td>
+                    <TableCell key={col.field_key}>{renderCellValue(row, col.field_key)}</TableCell>
                   ))}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this record?")) {
-                            deleteMutation.mutate(row.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  {canEdit(authUser, "expenses") && (
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Delete this expense?")) deleteMutation.mutate(row.id);
+                          }}
+                          className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 
@@ -207,10 +208,7 @@ export default function Expenses() {
         <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
           {formColumns.map((field) => (
             <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
+              <label className="block text-sm mb-1">{field.field_label}</label>
               <DynamicField
                 field={field}
                 value={form[field.field_key]}

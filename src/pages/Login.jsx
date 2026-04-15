@@ -32,65 +32,77 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white relative">
-      <div className="absolute top-6 left-6 flex items-center gap-3">
-        <img src={logo} alt="NSBTEK Logo" className="h-10 w-auto object-contain" />
-        <div>
-          <p className="font-bold text-sm text-white leading-tight">NSBTEK</p>
-          <p className="text-[10px] text-blue-400 uppercase tracking-[0.25em]">
-            Think Big | AI-First
-          </p>
-        </div>
-      </div>
-
-      <div className="min-h-screen grid place-items-center px-6">
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-md bg-slate-900 rounded-2xl p-8 border border-slate-800 shadow-2xl"
+    <div className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="mb-8 flex items-center gap-3 bg-transparent border-0 p-0 text-left"
         >
-          <h1 className="text-3xl font-bold mb-2">Login</h1>
-          <p className="text-slate-400 mb-6">
-            Sign in to access CRM, ATS, HR, Workforce, and AI tools.
-          </p>
-
-          <div className="mb-4">
-            <label className="block mb-2 text-sm text-slate-300">Email</label>
-            <input
-              type="email"
-              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              required
-            />
+          <img
+            src={logo}
+            alt="NSBTEK Logo"
+            className="h-9 w-auto object-contain sm:h-10"
+          />
+          <div>
+            <p className="text-sm font-bold leading-tight text-white">NSBTEK</p>
+            <p className="text-[10px] uppercase tracking-[0.25em] text-blue-400">
+              Think Big | AI-First
+            </p>
           </div>
+        </button>
 
-          <div className="mb-4">
-            <label className="block mb-2 text-sm text-slate-300">Password</label>
-            <input
-              type="password"
-              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              required
-            />
-          </div>
-
-          {errorText ? (
-            <div className="mb-4 rounded-xl bg-red-500/10 text-red-300 px-4 py-3 text-sm">
-              {errorText}
-            </div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 transition px-4 py-3 font-semibold disabled:opacity-60"
+        <div className="flex flex-1 items-center justify-center">
+          <form
+            onSubmit={handleSubmit}
+            className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:p-8"
           >
-            {isSubmitting ? "Signing in..." : "Login"}
-          </button>
-        </form>
+            <h1 className="mb-2 text-2xl font-bold sm:text-3xl">Login</h1>
+            <p className="mb-6 text-sm leading-6 text-slate-400">
+              Sign in to access CRM, ATS, HR, Workforce, and AI tools.
+            </p>
+
+            {errorText ? (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {errorText}
+              </div>
+            ) : null}
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm">Email</label>
+                <input
+                  type="email"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm">Password</label>
+                <input
+                  type="password"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+              >
+                {isSubmitting ? "Signing in..." : "Login"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

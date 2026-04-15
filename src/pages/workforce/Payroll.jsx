@@ -1,26 +1,18 @@
-import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useMemo, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
-import RecordFormModal from "@/components/shared/RecordFormModal";
-import { useModuleColumns } from "@/hooks/useModuleColumns";
-import DynamicField from "@/components/shared/DynamicField";
+import { generatePayrollRun, calculatePayrollItem } from "@/api/payroll";
 
-async function listPayroll(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  let query = supabase
-    .from("payroll")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
+async function listPayrollRuns() {
+  const { data, error } = await supabase
+    .from("payroll_runs")
+    .select(`
+      *,
+      payroll_items (*)
+    `)
     .order("created_at", { ascending: false });
 
-  if (profile.role === "employee") {
-    query = query.eq("created_by", currentUser.id);
-  }
-
-  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -28,206 +20,105 @@ async function listPayroll(currentUser) {
 export default function Payroll() {
   const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({});
-  const { tableColumns, formColumns } = useModuleColumns("payroll");
+  const [form, setForm] = useState({
+    title: "",
+    period_start: "",
+    period_end: "",
+    run_mode: "manual",
+  });
 
-  const { data: payroll = [], isLoading, error } = useQuery({
-    queryKey: ["payroll", authUser?.id],
-    queryFn: () => listPayroll(authUser),
+  const { data: runs = [], isLoading, error } = useQuery({
+    queryKey: ["payroll-runs", authUser?.id],
+    queryFn: listPayrollRuns,
     enabled: !!authUser?.id,
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (payload) => {
-      const profile = await getProfileOrThrow(authUser.id);
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("payroll")
-        .insert({
-          ...cleanPayload,
-          organization_id: profile.organization_id,
-          created_by: authUser.id,
-          updated_by: authUser.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
+  const createRunMutation = useMutation({
+    mutationFn: (payload) => generatePayrollRun(authUser, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payroll", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["payroll-runs", authUser?.id] });
+      setForm({ title: "", period_start: "", period_end: "", run_mode: "manual" });
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("payroll")
-        .update({
-          ...cleanPayload,
-          updated_by: authUser.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payroll", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const { error } = await supabase.from("payroll").delete().eq("id", id);
-      if (error) throw error;
-      return true;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payroll", authUser?.id] });
-    },
-  });
-
-  const openAddModal = () => {
-    setForm({});
-    setEditingId(null);
-    setOpen(true);
-  };
-
-  const openEditModal = (row) => {
-    setForm(row);
-    setEditingId(row.id);
-    setOpen(true);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const renderCellValue = (row, fieldKey) => {
-    const value = row[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
+  const previewExample = useMemo(() => {
+    return calculatePayrollItem({
+      regular_hours: 40,
+      overtime_hours: 5,
+      hourly_rate: 30,
+      deductions: 120,
+      bonuses: 200,
+      taxes: 250,
+    });
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Payroll</h1>
-          <p className="text-muted-foreground">Manage payroll records.</p>
-        </div>
-        <button
-          onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Payroll
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold">Payroll</h1>
+        <p className="text-muted-foreground">Create manual or automated payroll runs with editable calculations.</p>
       </div>
 
-      <div className="rounded-2xl border overflow-hidden bg-card">
+      <div className="rounded-2xl border bg-card p-5 space-y-4">
+        <h2 className="text-lg font-semibold">Create Payroll Run</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Title</label>
+            <input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Run Mode</label>
+            <select value={form.run_mode} onChange={(e) => setForm((p) => ({ ...p, run_mode: e.target.value }))} className="w-full rounded-lg border px-3 py-2">
+              <option value="manual">Manual</option>
+              <option value="automated">Automated</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Period Start</label>
+            <input type="date" value={form.period_start} onChange={(e) => setForm((p) => ({ ...p, period_start: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Period End</label>
+            <input type="date" value={form.period_end} onChange={(e) => setForm((p) => ({ ...p, period_end: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button onClick={() => createRunMutation.mutate(form)} className="rounded-xl bg-blue-600 text-white px-4 py-2 font-medium">
+            Create Run
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border bg-card p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Calculation Preview</h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-xl border p-4">Gross Pay: {previewExample.gross_pay}</div>
+          <div className="rounded-xl border p-4">Net Pay: {previewExample.net_pay}</div>
+          <div className="rounded-xl border p-4">Manual adjustments supported</div>
+          <div className="rounded-xl border p-4">Live formula editing supported</div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border bg-card p-5 space-y-4">
+        <h2 className="text-lg font-semibold">Payroll Runs</h2>
         {isLoading ? (
-          <div className="p-6">Loading payroll...</div>
+          <div>Loading payroll runs...</div>
         ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : payroll.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No payroll records yet.</div>
+          <div className="text-red-600">{error.message}</div>
+        ) : runs.length === 0 ? (
+          <div className="text-muted-foreground">No payroll runs created yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                {tableColumns.map((col) => (
-                  <th key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </th>
-                ))}
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payroll.map((row) => (
-                <tr key={row.id} className="border-t">
-                  {tableColumns.map((col) => (
-                    <td key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(row, col.field_key)}
-                    </td>
-                  ))}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this record?")) {
-                            deleteMutation.mutate(row.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-3">
+            {runs.map((run) => (
+              <div key={run.id} className="rounded-xl border p-4">
+                <div className="font-medium">{run.title}</div>
+                <div className="text-sm text-muted-foreground">{run.period_start} to {run.period_end}</div>
+                <div className="text-sm text-muted-foreground">Status: {run.status} | Mode: {run.run_mode}</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-
-      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Payroll" : "Add Payroll"}>
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-              />
-            </div>
-          ))}
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
-              Cancel
-            </button>
-            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
-              {editingId ? "Update Payroll" : "Save Payroll"}
-            </button>
-          </div>
-        </form>
-      </RecordFormModal>
     </div>
   );
 }

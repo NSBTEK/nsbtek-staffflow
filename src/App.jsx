@@ -32,16 +32,9 @@ import Expenses from "@/pages/workforce/Expenses";
 import Contracts from "@/pages/workforce/Contracts";
 import Onboarding from "@/pages/workforce/Onboarding";
 import Payroll from "@/pages/workforce/Payroll";
+import ResetPassword from "@/pages/ResetPassword";
 
-const BASENAME = import.meta.env.BASE_URL;
-
-function moduleRoute(module, element) {
-  return (
-    <Route element={<ProtectedModuleRoute module={module} />}>
-      <Route element={element} path="" />
-    </Route>
-  );
-}
+const BASENAME = import.meta.env.BASE_URL || "/";
 
 export default function App() {
   return (
@@ -51,6 +44,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           <Route element={<ProtectedRoute />}>
@@ -62,9 +56,11 @@ export default function App() {
               <Route path="/clients" element={<ProtectedModuleRoute module="clients" />}>
                 <Route index element={<Clients />} />
               </Route>
+
               <Route path="/contacts" element={<ProtectedModuleRoute module="contacts" />}>
                 <Route index element={<Contacts />} />
               </Route>
+
               <Route path="/activities" element={<ProtectedModuleRoute module="activities" />}>
                 <Route index element={<Activities />} />
               </Route>
@@ -72,61 +68,74 @@ export default function App() {
               <Route path="/jobs" element={<ProtectedModuleRoute module="jobs" />}>
                 <Route index element={<Jobs />} />
               </Route>
+
               <Route path="/candidates" element={<ProtectedModuleRoute module="candidates" />}>
                 <Route index element={<Candidates />} />
               </Route>
+
               <Route path="/submissions" element={<ProtectedModuleRoute module="submissions" />}>
                 <Route index element={<Submissions />} />
               </Route>
+
               <Route path="/interviews" element={<ProtectedModuleRoute module="interviews" />}>
                 <Route index element={<Interviews />} />
               </Route>
+
               <Route path="/placements" element={<ProtectedModuleRoute module="placements" />}>
                 <Route index element={<Placements />} />
-              </Route>
-
-              <Route path="/request-access" element={<ProtectedModuleRoute module="request_access" />}>
-                <Route index element={<RequestAccess />} />
-              </Route>
-
-              <Route path="/workforce/timesheets" element={<ProtectedModuleRoute module="timesheets" />}>
-                <Route index element={<Timesheets />} />
-              </Route>
-              <Route path="/workforce/expenses" element={<ProtectedModuleRoute module="expenses" />}>
-                <Route index element={<Expenses />} />
-              </Route>
-              <Route path="/workforce/contracts" element={<ProtectedModuleRoute module="contracts" />}>
-                <Route index element={<Contracts />} />
-              </Route>
-              <Route path="/workforce/onboarding" element={<ProtectedModuleRoute module="onboarding" />}>
-                <Route index element={<Onboarding />} />
-              </Route>
-              <Route path="/workforce/payroll" element={<ProtectedModuleRoute module="payroll" />}>
-                <Route index element={<Payroll />} />
               </Route>
 
               <Route path="/ai-assistant" element={<ProtectedModuleRoute module="ai_assistant" />}>
                 <Route index element={<AIAssistant />} />
               </Route>
+
               <Route path="/resume-parser" element={<ProtectedModuleRoute module="resume_parser" />}>
                 <Route index element={<ResumeParser />} />
               </Route>
+
               <Route path="/client-billing" element={<ProtectedModuleRoute module="client_billing" />}>
                 <Route index element={<ClientBilling />} />
+              </Route>
+
+              <Route path="/request-access" element={<RequestAccess />} />
+
+              <Route path="/timesheets" element={<ProtectedModuleRoute module="timesheets" />}>
+                <Route index element={<Timesheets />} />
+              </Route>
+
+              <Route path="/expenses" element={<ProtectedModuleRoute module="expenses" />}>
+                <Route index element={<Expenses />} />
+              </Route>
+
+              <Route path="/contracts" element={<ProtectedModuleRoute module="contracts" />}>
+                <Route index element={<Contracts />} />
+              </Route>
+
+              <Route path="/onboarding" element={<ProtectedModuleRoute module="onboarding" />}>
+                <Route index element={<Onboarding />} />
+              </Route>
+
+              <Route path="/payroll" element={<ProtectedModuleRoute module="payroll" />}>
+                <Route index element={<Payroll />} />
+              </Route>
+
+              <Route path="/admin/columns" element={<ProtectedModuleRoute module="users" />}>
+                <Route index element={<ColumnSettings />} />
               </Route>
 
               <Route path="/admin/users" element={<ProtectedModuleRoute module="users" />}>
                 <Route index element={<UserManagement />} />
               </Route>
+
               <Route path="/admin/role-groups" element={<ProtectedModuleRoute module="users" />}>
                 <Route index element={<RoleGroups />} />
               </Route>
-              <Route path="/admin/columns" element={<ProtectedModuleRoute module="columns" />}>
-                <Route index element={<ColumnSettings />} />
-              </Route>
-              <Route path="/admin/integrations" element={<ProtectedModuleRoute module="integrations" />}>
+
+              <Route path="/admin/integrations" element={<ProtectedModuleRoute module="users" />}>
                 <Route index element={<Integrations />} />
               </Route>
+
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>
 

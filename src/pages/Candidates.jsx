@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
+import AttachmentUploader from "@/components/shared/AttachmentUploader";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 async function listCandidates(currentUser) {
   const profile = await getProfileOrThrow(currentUser.id);
@@ -20,93 +22,14 @@ async function listCandidates(currentUser) {
   return data || [];
 }
 
-async function createCandidateRecord(payload, currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const allowedKeys = [
-    "first_name",
-    "last_name",
-    "email",
-    "phone",
-    "status",
-    "title",
-    "location",
-    "experience",
-    "skills",
-    "notes",
-    "source",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("candidates")
-    .insert({
-      ...cleanPayload,
-      organization_id: profile.organization_id,
-      created_by: currentUser.id,
-      updated_by: currentUser.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function updateCandidateRecord(id, payload, currentUser) {
-  const allowedKeys = [
-    "first_name",
-    "last_name",
-    "email",
-    "phone",
-    "status",
-    "title",
-    "location",
-    "experience",
-    "skills",
-    "notes",
-    "source",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("candidates")
-    .update({
-      ...cleanPayload,
-      updated_by: currentUser.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function deleteCandidateRecord(id) {
-  const { error } = await supabase
-    .from("candidates")
-    .delete()
-    .eq("id", id);
-
-  if (error) throw error;
-  return true;
-}
-
 export default function Candidates() {
   const { authUser } = useAuth();
   const queryClient = useQueryClient();
+  const { tableColumns, formColumns } = useModuleColumns("candidates");
+
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
-  const { tableColumns, formColumns } = useModuleColumns("candidates");
 
   const { data: candidates = [], isLoading, error } = useQuery({
     queryKey: ["candidates", authUser?.id],
@@ -114,29 +37,76 @@ export default function Candidates() {
     enabled: !!authUser?.id,
   });
 
+  const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
+
   const createMutation = useMutation({
-    mutationFn: (payload) => createCandidateRecord(payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
-      resetForm();
-      setOpen(false);
+    mutationFn: async (payload) => {
+      const profile = await getProfileOrThrow(authUser.id);
+
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("candidates")
+        .insert({
+          ...cleanPayload,
+          organization_id: profile.organization_id,
+          created_by: authUser.id,
+          updated_by: authUser.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async (savedRow) => {
+      await queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
+      setEditingId(savedRow.id);
+      setForm(savedRow);
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) =>
-      updateCandidateRecord(id, payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
-      resetForm();
-      setOpen(false);
+    mutationFn: async ({ id, payload }) => {
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("candidates")
+        .update({
+          ...cleanPayload,
+          updated_by: authUser.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async (savedRow) => {
+      await queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
+      setEditingId(savedRow.id);
+      setForm(savedRow);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteCandidateRecord,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
+    mutationFn: async (id) => {
+      const { error } = await supabase
+        .from("candidates")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["candidates", authUser?.id] });
     },
   });
 
@@ -154,6 +124,11 @@ export default function Candidates() {
     setEditingId(candidate.id);
     setForm(candidate);
     setOpen(true);
+  };
+
+  const closeModal = () => {
+    setOpen(false);
+    resetForm();
   };
 
   const handleSubmit = (e) => {
@@ -182,16 +157,16 @@ export default function Candidates() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Candidates</h1>
           <p className="text-muted-foreground">
-            Manage shared candidate records for your organization.
+            Manage candidates and upload resumes directly inside the candidate form.
           </p>
         </div>
         <button
           onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
         >
           + Add Candidate
         </button>
@@ -205,27 +180,27 @@ export default function Candidates() {
         ) : candidates.length === 0 ? (
           <div className="p-6 text-muted-foreground">No candidates yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {tableColumns.map((col) => (
-                  <th key={col.field_key} className="px-4 py-3 text-left">
+                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
                     {col.field_label}
-                  </th>
+                  </TableHead>
                 ))}
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {candidates.map((candidate) => (
-                <tr key={candidate.id} className="border-t">
+                <TableRow key={candidate.id}>
                   {tableColumns.map((col) => (
-                    <td key={col.field_key} className="px-4 py-3">
+                    <TableCell key={col.field_key} className="px-4 py-3">
                       {renderCellValue(candidate, col.field_key)}
-                    </td>
+                    </TableCell>
                   ))}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                  <TableCell className="px-4 py-3">
+                    <div className="flex justify-end gap-2 flex-wrap">
                       <button
                         onClick={() => openEditModal(candidate)}
                         className="rounded-lg border px-3 py-1.5"
@@ -246,43 +221,65 @@ export default function Candidates() {
                         Delete
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 
       <RecordFormModal
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(value) => {
+          if (!value) closeModal();
+          else setOpen(true);
+        }}
         title={editingId ? "Edit Candidate" : "Add Candidate"}
       >
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div
-              key={field.field_key}
-              className={field.field_type === "textarea" ? "md:col-span-2" : ""}
-            >
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) =>
-                  setForm((prev) => ({ ...prev, [key]: value }))
-                }
-              />
-            </div>
-          ))}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid md:grid-cols-2 gap-4">
+            {formColumns.map((field) => (
+              <div
+                key={field.field_key}
+                className={field.field_type === "textarea" ? "md:col-span-2" : ""}
+              >
+                <label className="block text-sm mb-1">
+                  {field.field_label}
+                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <DynamicField
+                  field={field}
+                  value={form[field.field_key]}
+                  onChange={(key, value) =>
+                    setForm((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
 
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-medium text-slate-900">Resume / Candidate Documents</div>
+            <p className="mt-1 text-xs text-slate-500">
+              Upload resume, portfolio, ID, or other candidate documents here.
+            </p>
+
+            <div className="mt-4">
+              {editingId ? (
+                <AttachmentUploader module="candidates" recordId={editingId} />
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                  Save the candidate first, then upload resume or documents in this same form.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closeModal}
               className="rounded-lg border px-4 py-2"
             >
               Cancel
@@ -290,8 +287,13 @@ export default function Candidates() {
             <button
               type="submit"
               className="rounded-lg bg-blue-600 text-white px-4 py-2"
+              disabled={createMutation.isPending || updateMutation.isPending}
             >
-              {editingId ? "Update Candidate" : "Save Candidate"}
+              {createMutation.isPending || updateMutation.isPending
+                ? "Saving..."
+                : editingId
+                ? "Update Candidate"
+                : "Save Candidate"}
             </button>
           </div>
         </form>

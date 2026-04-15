@@ -8,6 +8,7 @@ import {
   updateColumnConfig,
 } from "@/api/columnConfigs";
 import RecordFormModal from "@/components/shared/RecordFormModal";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 const MODULE_OPTIONS = [
   { value: "clients", label: "Clients" },
@@ -182,7 +183,7 @@ export default function ColumnSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Column Settings</h1>
           <p className="text-muted-foreground">
@@ -192,7 +193,7 @@ export default function ColumnSettings() {
 
         <button
           onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
         >
           + Add Column
         </button>
@@ -223,34 +224,34 @@ export default function ColumnSettings() {
         ) : sortedRows.length === 0 ? (
           <div className="p-6 text-muted-foreground">No column settings found for this module.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className="px-4 py-3 text-left">Order</th>
-                <th className="px-4 py-3 text-left">Label</th>
-                <th className="px-4 py-3 text-left">Key</th>
-                <th className="px-4 py-3 text-left">Type</th>
-                <th className="px-4 py-3 text-left">Table</th>
-                <th className="px-4 py-3 text-left">Form</th>
-                <th className="px-4 py-3 text-left">Required</th>
-                <th className="px-4 py-3 text-left">System</th>
-                <th className="px-4 py-3 text-left">Active</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4 py-3 text-left">Order</TableHead>
+                <TableHead className="px-4 py-3 text-left">Label</TableHead>
+                <TableHead className="px-4 py-3 text-left">Key</TableHead>
+                <TableHead className="px-4 py-3 text-left">Type</TableHead>
+                <TableHead className="px-4 py-3 text-left">Table</TableHead>
+                <TableHead className="px-4 py-3 text-left">Form</TableHead>
+                <TableHead className="px-4 py-3 text-left">Required</TableHead>
+                <TableHead className="px-4 py-3 text-left">System</TableHead>
+                <TableHead className="px-4 py-3 text-left">Active</TableHead>
+                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sortedRows.map((row) => (
-                <tr key={row.id} className="border-t">
-                  <td className="px-4 py-3">{row.sort_order}</td>
-                  <td className="px-4 py-3">{row.field_label}</td>
-                  <td className="px-4 py-3">{row.field_key}</td>
-                  <td className="px-4 py-3 capitalize">{row.field_type}</td>
-                  <td className="px-4 py-3">{row.visible_in_table ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{row.visible_in_form ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{row.required ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{row.is_system ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{row.is_active ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={row.id}>
+                  <TableCell className="px-4 py-3">{row.sort_order}</TableCell>
+                  <TableCell className="px-4 py-3">{row.field_label}</TableCell>
+                  <TableCell className="px-4 py-3">{row.field_key}</TableCell>
+                  <TableCell className="px-4 py-3 capitalize">{row.field_type}</TableCell>
+                  <TableCell className="px-4 py-3">{row.visible_in_table ? "Yes" : "No"}</TableCell>
+                  <TableCell className="px-4 py-3">{row.visible_in_form ? "Yes" : "No"}</TableCell>
+                  <TableCell className="px-4 py-3">{row.required ? "Yes" : "No"}</TableCell>
+                  <TableCell className="px-4 py-3">{row.is_system ? "Yes" : "No"}</TableCell>
+                  <TableCell className="px-4 py-3">{row.is_active ? "Yes" : "No"}</TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex justify-end gap-2 flex-wrap">
                       <button
                         onClick={() => moveRow(row, "up")}
@@ -279,11 +280,11 @@ export default function ColumnSettings() {
                         </button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 

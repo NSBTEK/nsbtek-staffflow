@@ -1,569 +1,699 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import logo from "../assets/logo.png";
+import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Shield, Cloud, Brain, Cpu, Globe, Lock,
-  CheckCircle, ArrowRight, Phone, Mail, Menu, X,
-  Users, Award, Zap, Database, BarChart2
-} from 'lucide-react';
+  ArrowRight,
+  Sparkles,
+  ShieldCheck,
+  Briefcase,
+  Users,
+  Building2,
+  Cpu,
+  Workflow,
+  BarChart3,
+  BarChart2,
+  Mail,
+  Phone,
+  MapPin,
+  CheckCircle2,
+  Menu,
+  X,
+} from "lucide-react";
+import logo from "@/assets/logo.png";
 
-const products = [
-  { icon: Shield, title: 'Security & Surveillance', desc: 'Securing critical infrastructure with real-time monitoring and intelligent detection.', color: 'from-rose-500 to-rose-700', features: ['Real-time monitoring & smart detection', 'Rapid incident response'] },
-  { icon: Brain, title: 'Healthcare AI', desc: 'AI-powered healthcare solutions for smarter care and better clinical decisions.', color: 'from-blue-500 to-blue-700', features: ['Smarter clinical decisions', 'Seamless care continuity'] },
-  { icon: Globe, title: 'Media & Education', desc: 'Intelligent platforms enhancing learning, communication, and engagement at scale.', color: 'from-violet-500 to-violet-700', features: ['Improved learner engagement', 'Scalable digital accessibility'] },
-  { icon: Cpu, title: 'Telecommunication', desc: 'Secure, scalable networks enabling reliable connectivity for modern enterprises.', color: 'from-cyan-500 to-cyan-700', features: ['High-speed connectivity', 'Reliable network infrastructure'] },
-  { icon: Users, title: 'HR Consulting', desc: 'Structured HR consulting for efficient hiring, onboarding, and workforce management.', color: 'from-emerald-500 to-emerald-700', features: ['Streamlined talent hiring', 'Workforce alignment strategy'] },
-  { icon: Lock, title: 'Cybersecurity', desc: 'Proactive cybersecurity protecting systems and data across digital environments.', color: 'from-amber-500 to-amber-700', features: ['Early threat detection', 'Reduced security vulnerabilities'] },
-];
+function FeatureCard({ icon: Icon, title, text }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/[0.07] hover:border-white/15 sm:p-6">
+      <div className="grid h-10 w-10 place-items-center rounded-2xl bg-blue-500/15 text-blue-300 sm:h-11 sm:w-11">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h3 className="mt-4 text-base font-semibold text-white sm:text-lg">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{text}</p>
+    </div>
+  );
+}
 
-const services = [
-  { icon: Lock, title: 'Cybersecurity', desc: 'Protecting your digital ecosystem with intelligent cybersecurity—ensuring monitoring, risk mitigation, and secure operations.', features: ['End-to-end security across systems and apps', 'Continuous monitoring and rapid response'] },
-  { icon: Shield, title: 'SOC', desc: 'Continuous security operations ensuring secure, reliable, and efficient enterprise environments.', features: ['Real-time threat detection', 'Continuous risk management'] },
-];
+function ServiceCard({ title, text, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-2xl border border-white/10 bg-white/5 p-5 text-left transition hover:border-blue-400/30 hover:bg-white/[0.07] sm:p-6"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-white sm:text-lg">{title}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">{text}</p>
+        </div>
+        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-blue-300 group-hover:translate-x-0.5" />
+      </div>
+    </button>
+  );
+}
 
-const certifications = ['GDPR Ready', 'UKCert', 'IAF Member', 'ISO 9001'];
+function MobileNavButton({ children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/[0.08]"
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function Landing() {
   const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [contactForm, setContactForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    message: ''
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [contact, setContact] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    message: "",
   });
 
-  const handleLogin = () => {
-    navigate('/login');
-  };
-
   const scrollToSection = (id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      const navbarOffset = 80;
-      const elementPosition = el.getBoundingClientRect().top + window.pageYOffset;
-      const offsetPosition = elementPosition - navbarOffset;
+    setMenuOpen(false);
 
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth',
-      });
+    if (id === "top") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
+
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  const handleLogin = () => {
+    setMenuOpen(false);
+    navigate("/login");
+  };
+
+  const serviceItems = useMemo(
+    () => [
+      {
+        title: "ATS + Pipeline",
+        text: "Track jobs, candidates, submissions, interviews, and placements with cleaner handoffs and better visibility.",
+      },
+      {
+        title: "CRM + Relationships",
+        text: "Manage companies, contacts, and activities in one operational system built for staffing teams.",
+      },
+      {
+        title: "Workforce Operations",
+        text: "Support timesheets, expenses, onboarding, contracts, payroll, and approvals with role-aware access.",
+      },
+      {
+        title: "AI-First Admin",
+        text: "Control permissions, role groups, module access, and configuration from one secure workspace.",
+      },
+    ],
+    []
+  );
+
+  const footerServices = [
+    "ATS + Pipeline",
+    "CRM + Relationships",
+    "Workforce Operations",
+    "Admin + Governance",
+  ];
 
   return (
-    <div id="top" className="min-h-screen bg-[#050d1a] text-white font-inter">
-      {/* NAV */}
-      <nav className="fixed top-0 w-full z-50 bg-[#050d1a]/95 backdrop-blur-md border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-  <img
-    src={logo}
-    alt="NSBTEK Logo"
-    className="h-10 w-auto object-contain"
-  />
-  <div>
-    <p className="font-bold text-sm text-white leading-tight">NSBTEK</p>
-    <p className="text-[9px] text-blue-400 uppercase tracking-widest">
-      Think Big | AI-First
-    </p>
-  </div>
-</div>
+    <div className="min-h-screen bg-slate-950 text-white">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => scrollToSection("top")}
+            className="flex items-center gap-3 border-0 bg-transparent p-0 text-left"
+          >
+            <img
+              src={logo}
+              alt="NSBTEK Logo"
+              className="h-9 w-auto object-contain sm:h-10"
+            />
+            <div>
+              <p className="text-sm font-bold leading-tight text-white">NSBTEK</p>
+              <p className="text-[10px] uppercase tracking-[0.25em] text-blue-400">
+                Think Big | AI-First
+              </p>
+            </div>
+          </button>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-6">
-            {['Services', 'Products', 'About'].map(item => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => scrollToSection(item.toLowerCase())}
-                className="text-sm text-white/70 hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
-              >
-                {item}
-              </button>
-            ))}
+          <div className="hidden items-center gap-6 md:flex">
             <button
               type="button"
-              onClick={() => scrollToSection('contact')}
-              className="text-sm text-white/70 hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              onClick={() => scrollToSection("services")}
+              className="text-sm text-slate-300 transition hover:text-white"
+            >
+              Services
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("about")}
+              className="text-sm text-slate-300 transition hover:text-white"
+            >
+              About
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("contact")}
+              className="text-sm text-slate-300 transition hover:text-white"
             >
               Contact
             </button>
-          </div>
-
-          {/* Login button */}
-          <div className="flex items-center gap-3">
             <button
               onClick={handleLogin}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              className="rounded-xl border border-white/15 px-4 py-2 text-sm font-medium text-white hover:bg-white/5"
             >
-              Login to NSBTEK
+              Login
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={handleLogin}
+              className="rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-white hover:bg-white/5"
+            >
+              Login
             </button>
             <button
-              className="md:hidden text-white/70"
-              onClick={() => setMobileOpen(!mobileOpen)}
               type="button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="rounded-xl border border-white/15 p-2 text-white hover:bg-white/5"
+              aria-label="Toggle menu"
             >
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile menu */}
-        {mobileOpen && (
-          <div className="md:hidden bg-[#0d1f3c] border-t border-white/5 px-6 py-4 space-y-3">
-            {['Services', 'Products', 'About', 'Contact'].map(item => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => {
-                  scrollToSection(item.toLowerCase());
-                  setMobileOpen(false);
-                }}
-                className="block text-sm text-white/70 hover:text-white py-1 text-left bg-transparent border-0 w-full cursor-pointer"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
-      </nav>
-
-      {/* HERO */}
-      <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#050d1a] via-[#0a1628] to-[#050d1a]" />
-          <div className="absolute top-1/4 right-0 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-1/4 left-0 w-[400px] h-[400px] bg-violet-600/8 rounded-full blur-3xl" />
-          <div
-            className="absolute inset-0 opacity-[0.03]"
-            style={{
-              backgroundImage:
-                'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
-              backgroundSize: '60px 60px'
-            }}
-          />
-        </div>
-
-        <div className="relative max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center py-20">
-          <div>
-            <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
-              <Zap className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-xs text-blue-300 font-medium uppercase tracking-wider">Think Big | AI First</span>
-            </div>
-            <h1 className="text-5xl lg:text-6xl font-extrabold leading-tight mb-6">
-              <span className="text-amber-400">Transforming</span>{' '}
-              <span className="text-white">the Future</span>
-              <br />
-              <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">with AI</span>
-            </h1>
-            <p className="text-lg text-white/60 leading-relaxed mb-8 max-w-lg">
-              We help organizations innovate faster, operate smarter, and secure their digital frontier — leveraging AI, Cloud, IoT, and Cybersecurity to build future-ready systems worldwide.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <button
-                type="button"
-                onClick={() => scrollToSection('contact')}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 h-auto rounded-xl text-sm font-semibold flex items-center gap-2"
-              >
-                Get Started <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={handleLogin}
-                type="button"
-                className="border border-white/20 text-white hover:bg-white/10 px-6 py-3 h-auto rounded-xl text-sm font-semibold bg-transparent"
-              >
-                Platform Login
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-3 mt-8">
-              {certifications.map(c => (
-                <div key={c} className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-                  <CheckCircle className="w-3 h-3 text-emerald-400" />
-                  <span className="text-xs text-white/60">{c}</span>
-                </div>
-              ))}
+        {menuOpen ? (
+          <div className="border-t border-white/10 bg-slate-950 px-4 py-4 md:hidden">
+            <div className="space-y-3">
+              <MobileNavButton onClick={() => scrollToSection("services")}>
+                Services
+              </MobileNavButton>
+              <MobileNavButton onClick={() => scrollToSection("about")}>
+                About
+              </MobileNavButton>
+              <MobileNavButton onClick={() => scrollToSection("contact")}>
+                Contact
+              </MobileNavButton>
             </div>
           </div>
+        ) : null}
+      </header>
 
-          <div className="hidden lg:block relative">
-            <div className="relative w-full aspect-square max-w-[500px] mx-auto">
-              <img
-                src="https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=600&auto=format&fit=crop"
-                alt="AI Technology"
-                className="rounded-3xl object-cover w-full h-full opacity-80"
-              />
-              <div className="absolute inset-0 rounded-3xl bg-gradient-to-t from-[#050d1a] via-transparent to-transparent" />
-              <div className="absolute -bottom-4 -left-4 bg-[#0d1f3c] border border-white/10 rounded-2xl p-4 shadow-xl">
-                <p className="text-3xl font-bold text-blue-400">33+</p>
-                <p className="text-xs text-white/50 mt-0.5">Years of Experience</p>
-              </div>
-              <div className="absolute -top-4 -right-4 bg-[#0d1f3c] border border-white/10 rounded-2xl p-4 shadow-xl">
-                <p className="text-3xl font-bold text-emerald-400">98%</p>
-                <p className="text-xs text-white/50 mt-0.5">Client Satisfaction</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* AI ENGINE SECTION */}
-      <section className="py-20 bg-gradient-to-b from-[#050d1a] to-[#07111e]">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { icon: Brain, title: 'AI That Grows With You', desc: "Whether you're experimenting with AI or scaling enterprise adoption, our solutions adapt to your evolving business challenges.", points: ['Flexible AI Solution Architecture', 'Built Around Your Data'] },
-              { icon: Database, title: 'Your AI Engine', desc: 'Connects data, intelligence, and automation to solve business challenges at enterprise scale.', points: ['Intelligent data pipelines', 'Real-time decision support'] },
-              { icon: Award, title: 'AI Built for Impact', desc: 'A portfolio of AI-driven products designed to solve industry-specific challenges with speed, scale, and security.', points: ['33+ Years of Experience', 'Global enterprise deployments'] },
-            ].map((item, i) => (
-              <div key={i} className="bg-white/3 border border-white/8 rounded-2xl p-6 hover:border-blue-500/30 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center mb-4">
-                  <item.icon className="w-5 h-5 text-blue-400" />
-                </div>
-                <h3 className="text-base font-bold text-white mb-2">{item.title}</h3>
-                <p className="text-sm text-white/50 leading-relaxed mb-4">{item.desc}</p>
-                <ul className="space-y-1.5">
-                  {item.points.map((p, j) => (
-                    <li key={j} className="flex items-center gap-2 text-xs text-white/60">
-                      <CheckCircle className="w-3.5 h-3.5 text-blue-400 shrink-0" /> {p}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* HOW WE WORK */}
-      <section className="py-20" id="about">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-14">
-            <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold mb-3">How We Work</p>
-            <h2 className="text-4xl font-extrabold text-white">How We Deliver Innovation and Excellence</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { title: 'Collaborative Approach', desc: 'We work closely with your team to understand challenges and deliver tailored, AI-driven solutions aligned to your needs.' },
-              { title: 'Innovative Solutions', desc: 'Using AI, IoT, cloud, and cybersecurity, we build scalable solutions that enhance efficiency, security, and future readiness.' },
-              { title: 'Commitment to Excellence', desc: 'We deliver high-quality, cost-effective solutions with measurable results and long-term business value.' },
-            ].map((item, i) => (
-              <div key={i} className="text-center">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-5">
-                  <span className="text-2xl font-black text-blue-400">0{i + 1}</span>
-                </div>
-                <h3 className="text-lg font-bold text-white mb-3">{item.title}</h3>
-                <p className="text-sm text-white/50 leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* PRODUCTS */}
-      <section className="py-20 bg-[#07111e]" id="products">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-14">
-            <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold mb-3">Our Products</p>
-            <h2 className="text-4xl font-extrabold text-white">Intelligent Solutions for a Safer, Smarter, Connected Future</h2>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {products.map((p, i) => (
-              <div key={i} className="group bg-white/3 border border-white/8 rounded-2xl p-6 hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer">
-                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${p.color} flex items-center justify-center mb-5 shadow-lg`}>
-                  <p.icon className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-base font-bold text-white mb-2">{p.title}</h3>
-                <p className="text-sm text-white/50 mb-4 leading-relaxed">{p.desc}</p>
-                <ul className="space-y-1.5">
-                  {p.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-2 text-xs text-white/50">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" /> {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* SERVICES */}
-      <section className="py-20" id="services">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-14">
-            <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold mb-3">Our Services</p>
-            <h2 className="text-4xl font-extrabold text-white">Smarter IT Services for Secure, Scalable Enterprise Growth</h2>
-          </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            {services.map((s, i) => (
-              <div key={i} className="bg-white/3 border border-white/8 rounded-2xl p-8 hover:border-blue-500/30 transition-colors">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/15 flex items-center justify-center mb-5">
-                  <s.icon className="w-6 h-6 text-blue-400" />
-                </div>
-                <h3 className="text-xl font-bold text-white mb-3">{s.title}</h3>
-                <p className="text-sm text-white/50 mb-5 leading-relaxed">{s.desc}</p>
-                <ul className="space-y-2">
-                  {s.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-2 text-sm text-white/60">
-                      <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" /> {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* WHY CHOOSE US */}
-      <section className="py-20 bg-[#07111e]">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold mb-3">Why Choose Us</p>
-          <h2 className="text-4xl font-extrabold text-white mb-4">We Accept Nothing Less Than Transformation</h2>
-          <p className="text-white/50 mb-12 max-w-2xl mx-auto text-sm">
-            NSBTEK is a globally certified tech leader delivering AI, IoT, cloud, and cybersecurity solutions, empowering industries with digital transformation.
-          </p>
-          <div className="grid md:grid-cols-4 gap-6 mb-12">
-            {[
-              { value: '98%', label: 'Client Satisfaction Rate' },
-              { value: '500+', label: 'Projects Delivered' },
-              { value: '33+', label: 'Years of Experience' },
-              { value: '50+', label: 'Enterprise Clients' },
-            ].map((stat, i) => (
-              <div key={i} className="bg-white/3 border border-white/8 rounded-2xl p-6">
-                <p className="text-4xl font-black text-blue-400 mb-2">{stat.value}</p>
-                <p className="text-sm text-white/50">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection('contact')}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 h-auto rounded-xl font-semibold flex items-center gap-2 mx-auto"
-          >
-            Contact Us Today <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
-
-      {/* NSBTEK CTA */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="bg-gradient-to-br from-blue-600/20 to-violet-600/10 border border-blue-500/20 rounded-3xl p-12 text-center">
-            <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-400/20 rounded-full px-4 py-1.5 mb-6">
-              <BarChart2 className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-xs text-blue-300 font-medium uppercase tracking-wider">NSBTek Platform</span>
-            </div>
-            <h2 className="text-4xl font-extrabold text-white mb-4">Manage Your Workforce with NSBTEK</h2>
-            <p className="text-white/60 mb-8 max-w-2xl mx-auto">
-              Our AI-powered staffing platform for ATS, CRM, and Workforce management — built specifically for staffing agencies and enterprises.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4">
-              <button
-                onClick={handleLogin}
-                type="button"
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl text-sm font-semibold transition-colors"
-              >
-                Login to NSBTEK Account
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CONTACT */}
-      <section className="py-20 bg-[#07111e]" id="contact">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16">
+      <main>
+        <section className="relative overflow-hidden" id="top">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.22),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.18),transparent_24%)]" />
+          <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-16 lg:grid-cols-[1.2fr_0.8fr] lg:gap-12 lg:py-24">
             <div>
-              <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold mb-3">Get In Touch</p>
-              <h2 className="text-4xl font-extrabold text-white mb-4">We're just a message away from smarter solutions</h2>
-              <p className="text-white/50 mb-8 text-sm">Reach out for a consultation, partnership, or to learn more about our AI solutions.</p>
-              <div className="space-y-4">
-                <a href="mailto:hr@nsbtek.com" className="flex items-center gap-3 text-white/70 hover:text-white transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/40">Email</p>
-                    <p className="text-sm font-medium">hr@nsbtek.com</p>
-                  </div>
-                </a>
+              <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-blue-300 sm:text-xs">
+                <Sparkles className="h-3.5 w-3.5" />
+                Unified CRM · ATS · HR · Workforce
+              </div>
 
-                <a href="tel:+918466022022" className="flex items-center gap-3 text-white/70 hover:text-white transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
-                    <Phone className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/40">Phone</p>
-                    <p className="text-sm font-medium">+1 612-567-0908 / +91 970-437-3976</p>
-                  </div>
-                </a>
+              <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-6xl">
+                Run your hiring and workforce operations from one elegant system.
+              </h1>
 
-                <a
-                  href="https://in.linkedin.com/company/NSBTEK"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-3 text-white/70 hover:text-white transition-colors"
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                NSBTEK StaffFlow brings together clients, contacts, jobs,
+                candidates, submissions, interviews, placements, workforce
+                approvals, and admin controls in one AI-first platform designed
+                for clarity, speed, and control.
+              </p>
+
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <button
+                  onClick={handleLogin}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/30 hover:bg-blue-500"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
-                    <span className="text-blue-400 text-sm font-bold">in</span>
+                  Get Started
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("contact")}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 hover:bg-white/[0.07]"
+                >
+                  <ShieldCheck className="h-4 w-4 text-emerald-300" />
+                  Contact Us Today
+                </button>
+              </div>
+
+              <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-2xl font-semibold text-white">All-in-one</div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    CRM, ATS, HR and operations unified
                   </div>
-                  <div>
-                    <p className="text-xs text-white/40">LinkedIn</p>
-                    <p className="text-sm font-medium">NSBTEK</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-2xl font-semibold text-white">Secure</div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    Organization-scoped data and file access
                   </div>
-                </a>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:col-span-2 lg:col-span-1">
+                  <div className="text-2xl font-semibold text-white">Configurable</div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    Custom columns, permissions and role groups
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="bg-white/3 border border-white/8 rounded-2xl p-8">
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <input
-                  placeholder="First Name"
-                  value={contactForm.first_name}
-                  onChange={e => setContactForm(p => ({ ...p, first_name: e.target.value }))}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 col-span-1"
-                />
-                <input
-                  placeholder="Last Name"
-                  value={contactForm.last_name}
-                  onChange={e => setContactForm(p => ({ ...p, last_name: e.target.value }))}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50"
-                />
+            <div className="relative">
+              <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 p-4 shadow-2xl sm:p-5">
+                <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.22em] text-blue-300 sm:text-xs">
+                        Executive Snapshot
+                      </div>
+                      <div className="mt-2 text-lg font-semibold text-white sm:text-xl">
+                        Operations at a glance
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-blue-500/15 p-3 text-blue-300">
+                      <BarChart3 className="h-5 w-5" />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="text-xs uppercase tracking-wider text-slate-400">
+                        Open Jobs
+                      </div>
+                      <div className="mt-2 text-3xl font-semibold">24</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="text-xs uppercase tracking-wider text-slate-400">
+                        Candidates
+                      </div>
+                      <div className="mt-2 text-3xl font-semibold">186</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="text-xs uppercase tracking-wider text-slate-400">
+                        Placements
+                      </div>
+                      <div className="mt-2 text-3xl font-semibold">17</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="text-xs uppercase tracking-wider text-slate-400">
+                        Approvals
+                      </div>
+                      <div className="mt-2 text-3xl font-semibold">9</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-sm font-medium text-white">
+                      Workflow Highlights
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-slate-300">
+                          Candidate pipeline movement
+                        </span>
+                        <span className="text-emerald-300">Healthy</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-slate-300">Timesheet approvals</span>
+                        <span className="text-amber-300">Needs review</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-slate-300">Client activity coverage</span>
+                        <span className="text-blue-300">Strong</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <input
-                placeholder="Email ID"
-                type="email"
-                value={contactForm.email}
-                onChange={e => setContactForm(p => ({ ...p, email: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 mb-4"
-              />
-
-              <input
-                placeholder="Contact Number"
-                value={contactForm.phone}
-                onChange={e => setContactForm(p => ({ ...p, phone: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 mb-4"
-              />
-
-              <textarea
-                placeholder="Message"
-                rows={4}
-                value={contactForm.message}
-                onChange={e => setContactForm(p => ({ ...p, message: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 mb-4 resize-none"
-              />
-
-              <button className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-3 h-auto font-semibold">
-                Submit Message
-              </button>
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 backdrop-blur lg:absolute lg:-bottom-6 lg:-left-6 lg:mt-0">
+                AI-first operations for modern staffing teams
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* FOOTER */}
-      <footer className="bg-[#030a14] border-t border-white/5 py-10">
-        <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-4 gap-8">
+        <section id="services" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-300">
+              Services
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Designed for operational clarity
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-slate-400 sm:text-base">
+              Every core workflow lives in one place, so your team spends less
+              time switching tools and more time moving work forward.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <FeatureCard
+              icon={Briefcase}
+              title="ATS + Pipeline"
+              text="Track jobs, candidates, submissions, interviews, and placements with better visibility and cleaner handoffs."
+            />
+            <FeatureCard
+              icon={Building2}
+              title="CRM + Relationships"
+              text="Manage client companies, contacts, and activities in a structure that stays usable as your team grows."
+            />
+            <FeatureCard
+              icon={Workflow}
+              title="Approvals + Workforce"
+              text="Support timesheets, expenses, contracts, onboarding, and payroll with role-aware reviews and admin oversight."
+            />
+            <FeatureCard
+              icon={Cpu}
+              title="Admin + Governance"
+              text="Use role groups, column settings, permissions, and secure organization scoping to stay in control."
+            />
+          </div>
+
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
+            {serviceItems.map((item) => (
+              <ServiceCard
+                key={item.title}
+                title={item.title}
+                text={item.text}
+                onClick={() => scrollToSection("contact")}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section id="about" className="border-t border-white/10 bg-slate-900/60">
+          <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16">
+            <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.22em] text-blue-300">
+                  <Users className="h-3.5 w-3.5" />
+                  Built for teams
+                </div>
+                <h2 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
+                  One workspace for leadership, recruiters, managers, HR, and employees.
+                </h2>
+                <p className="mt-4 text-sm leading-7 text-slate-400 sm:text-base">
+                  StaffFlow is structured so every role sees what they need,
+                  without losing operational consistency. That means cleaner
+                  approvals, better oversight, and fewer gaps across your
+                  organization.
+                </p>
+
+                <div className="mt-8 space-y-3">
+                  {[
+                    "Centralized staffing operations",
+                    "Role-based access and governance",
+                    "Cleaner workflows across ATS, CRM, and HR",
+                  ].map((point) => (
+                    <div key={point} className="flex items-center gap-3 text-sm text-slate-300">
+                      <CheckCircle2 className="h-4 w-4 text-blue-300" />
+                      <span>{point}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-sm font-semibold text-white">Admins</div>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Full visibility across role groups, users, approvals, and organization configuration.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-sm font-semibold text-white">Managers</div>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Review direct-report workflows, oversee hiring progress, and unblock decisions faster.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-sm font-semibold text-white">Recruiters & Sales</div>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Work across clients, jobs, candidates, submissions, and activity without scattered tools.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-sm font-semibold text-white">HR & Workforce</div>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Support onboarding, payroll, expenses, and operational approvals with more control.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16">
+          <div className="rounded-[32px] border border-blue-500/20 bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-600 px-5 py-8 shadow-2xl sm:px-8 sm:py-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/20 bg-white/10 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-blue-100">
+                  <BarChart2 className="h-3.5 w-3.5" />
+                  NSBTEK Platform
+                </div>
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                  Manage your workforce with NSBTEK
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-blue-100/90 sm:text-base">
+                  Our AI-powered staffing platform for ATS, CRM, and workforce
+                  management — built specifically for staffing agencies and enterprises.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <button
+                  onClick={handleLogin}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  Login to StaffFlow
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("contact")}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/30 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                >
+                  Contact Us Today
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-[#07111e] py-16 sm:py-20" id="contact">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
+              <div>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-blue-400">
+                  Get In Touch
+                </p>
+                <h2 className="mb-4 text-3xl font-extrabold text-white sm:text-4xl">
+                  We&apos;re just a message away from smarter solutions
+                </h2>
+                <p className="mb-8 text-sm leading-7 text-white/50">
+                  Reach out for a consultation, partnership, or to learn more
+                  about our staffing and workforce platform.
+                </p>
+
+                <div className="space-y-4">
+                  <a
+                    href="mailto:hr@nsbtek.com"
+                    className="flex items-center gap-3 text-white/70 transition-colors hover:text-white"
+                  >
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <Mail className="h-4 w-4 text-blue-300" />
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-white/40">Email</p>
+                      <p className="text-sm">hr@nsbtek.com</p>
+                    </div>
+                  </a>
+
+                  <a
+                    href="tel:+17324000000"
+                    className="flex items-center gap-3 text-white/70 transition-colors hover:text-white"
+                  >
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <Phone className="h-4 w-4 text-blue-300" />
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-white/40">Phone</p>
+                      <p className="text-sm">+1 (732) 400-0000</p>
+                    </div>
+                  </a>
+
+                  <div className="flex items-center gap-3 text-white/70">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <MapPin className="h-4 w-4 text-blue-300" />
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-white/40">Location</p>
+                      <p className="text-sm">New Jersey, United States</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm sm:p-6">
+                <div className="mb-5">
+                  <h3 className="text-xl font-semibold text-white">Contact Us</h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Send a message and we&apos;ll get back to you.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <input
+                    placeholder="Full Name"
+                    value={contact.name}
+                    onChange={(e) =>
+                      setContact((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-blue-500/50"
+                  />
+                  <input
+                    placeholder="Email Address"
+                    value={contact.email}
+                    onChange={(e) =>
+                      setContact((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-blue-500/50"
+                  />
+                </div>
+
+                <input
+                  placeholder="Contact Number"
+                  value={contact.phone}
+                  onChange={(e) =>
+                    setContact((prev) => ({ ...prev, phone: e.target.value }))
+                  }
+                  className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-blue-500/50"
+                />
+
+                <textarea
+                  rows={4}
+                  placeholder="Message"
+                  value={contact.message}
+                  onChange={(e) =>
+                    setContact((prev) => ({ ...prev, message: e.target.value }))
+                  }
+                  className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-blue-500/50"
+                />
+
+                <button
+                  type="button"
+                  className="mt-4 w-full rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500"
+                >
+                  Submit Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-white/5 bg-[#030a14] py-10">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <div className="flex items-center gap-3 mb-4">
-  <img
-    src={logo}
-    alt="NSBTEK Logo"
-    className="h-9 w-auto object-contain"
-  />
-  <p className="font-bold text-sm text-white">NSBTEK</p>
-</div>
-            <p className="text-xs text-white/40 leading-relaxed">
-              Elevate Efficiency with Scalable, Future-Ready IT Solutions that Accelerate Growth.
+            <div className="mb-4 flex items-center gap-3">
+              <img
+                src={logo}
+                alt="NSBTEK Logo"
+                className="h-9 w-auto object-contain"
+              />
+              <p className="text-sm font-bold text-white">NSBTEK</p>
+            </div>
+            <p className="text-xs leading-relaxed text-white/40">
+              Elevate efficiency with scalable, future-ready staffing and workforce solutions.
             </p>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-4">Quick Links</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-wider text-white/60">
+              Quick Links
+            </p>
             <button
               type="button"
-              onClick={() => scrollToSection('top')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              onClick={() => scrollToSection("top")}
+              className="mb-2 block cursor-pointer border-0 bg-transparent p-0 text-xs text-white/40 transition-colors hover:text-white/70"
             >
               Home
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('about')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              onClick={() => scrollToSection("about")}
+              className="mb-2 block cursor-pointer border-0 bg-transparent p-0 text-xs text-white/40 transition-colors hover:text-white/70"
             >
               About Us
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('contact')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              onClick={() => scrollToSection("contact")}
+              className="mb-2 block cursor-pointer border-0 bg-transparent p-0 text-xs text-white/40 transition-colors hover:text-white/70"
             >
               Contact Us
             </button>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-4">Services</p>
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
-            >
-              Cybersecurity
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
-            >
-              Security Operations Center
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
-            >
-              HR Consulting
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
-            >
-              AI Solutions
-            </button>
+            <p className="mb-4 text-xs font-bold uppercase tracking-wider text-white/60">
+              Services
+            </p>
+            {footerServices.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => scrollToSection("services")}
+                className="mb-2 block cursor-pointer border-0 bg-transparent p-0 text-xs text-white/40 transition-colors hover:text-white/70"
+              >
+                {item}
+              </button>
+            ))}
           </div>
 
           <div>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-4">Platform Login</p>
-            <button
-              onClick={handleLogin}
-              type="button"
-              className="block text-xs text-white/40 hover:text-white/70 mb-2 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+            <p className="mb-4 text-xs font-bold uppercase tracking-wider text-white/60">
+              Contact
+            </p>
+            <a
+              href="mailto:hr@nsbtek.com"
+              className="mb-2 block text-xs text-white/40 transition-colors hover:text-white/70"
             >
-              Login to NSBTEK
+              hr@nsbtek.com
+            </a>
+            <a
+              href="tel:+17324000000"
+              className="mb-2 block text-xs text-white/40 transition-colors hover:text-white/70"
+            >
+              +1 (732) 400-0000
+            </a>
+            <button
+              type="button"
+              onClick={() => scrollToSection("contact")}
+              className="mt-2 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white hover:bg-white/[0.08]"
+            >
+              Contact Us
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 mt-8 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-white/30">Copyright © 2026 NSBTEK. All Rights Reserved.</p>
-          <div className="flex items-center gap-4">
-            {certifications.map(c => (
-              <span key={c} className="text-[10px] text-white/30 border border-white/10 rounded-full px-2 py-0.5">
-                {c}
-              </span>
-            ))}
-          </div>
+        <div className="mx-auto mt-8 max-w-7xl px-4 sm:px-6">
+          <div className="h-px w-full bg-white/5" />
+          <p className="mt-6 text-xs text-white/30">
+            © {new Date().getFullYear()} NSBTEK StaffFlow. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>

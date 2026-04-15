@@ -3,15 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://nsbtek.github.io/nsbtek-staffflow/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:gh": "cross-env GITHUB_PAGES=true vite build",
-    "lint": "eslint .",
     "preview": "vite preview",
-    "predeploy": "npm run build:gh",
-    "deploy": "gh-pages -d dist -b gh-pages -r https://github.com/NSBTEK/nsbtek-staffflow.git"
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
@@ -51,6 +49,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^1.7.0",
     "next-themes": "^0.4.6",
+    "nodemailer": "^8.0.5",
     "react": "^19.2.4",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.4",
@@ -76,6 +75,7 @@
     "gh-pages": "^6.3.0",
     "globals": "^17.4.0",
     "postcss": "^8.4.40",
+    "supabase": "^2.89.1",
     "tailwindcss": "^3.4.7",
     "tailwindcss-animate": "^1.0.7",
     "vite": "^8.0.4"

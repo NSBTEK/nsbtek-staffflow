@@ -6,6 +6,7 @@ import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 async function listActivities(currentUser) {
   const profile = await getProfileOrThrow(currentUser.id);
@@ -165,7 +166,7 @@ export default function Activities() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Activities</h1>
           <p className="text-muted-foreground">
@@ -174,7 +175,7 @@ export default function Activities() {
         </div>
         <button
           onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
         >
           + Add Activity
         </button>
@@ -188,26 +189,26 @@ export default function Activities() {
         ) : activities.length === 0 ? (
           <div className="p-6 text-muted-foreground">No activities yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {tableColumns.map((col) => (
-                  <th key={col.field_key} className="px-4 py-3 text-left">
+                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
                     {col.field_label}
-                  </th>
+                  </TableHead>
                 ))}
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {activities.map((activity) => (
-                <tr key={activity.id} className="border-t">
+                <TableRow key={activity.id}>
                   {tableColumns.map((col) => (
-                    <td key={col.field_key} className="px-4 py-3">
+                    <TableCell key={col.field_key} className="px-4 py-3">
                       {renderCellValue(activity, col.field_key)}
-                    </td>
+                    </TableCell>
                   ))}
-                  <td className="px-4 py-3">
+                  <TableCell className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => openEditModal(activity)}
@@ -229,11 +230,11 @@ export default function Activities() {
                         Delete
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 

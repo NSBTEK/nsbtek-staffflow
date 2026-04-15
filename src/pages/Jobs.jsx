@@ -1,11 +1,14 @@
-import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/AuthContext";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
 import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
+import AttachmentUploader from "@/components/shared/AttachmentUploader";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 async function listJobs(currentUser) {
   const profile = await getProfileOrThrow(currentUser.id);
@@ -20,91 +23,12 @@ async function listJobs(currentUser) {
   return data || [];
 }
 
-async function createJobRecord(payload, currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const allowedKeys = [
-    "title",
-    "client_name",
-    "location",
-    "status",
-    "job_type",
-    "department",
-    "openings",
-    "salary",
-    "description",
-    "requirements",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("jobs")
-    .insert({
-      ...cleanPayload,
-      organization_id: profile.organization_id,
-      created_by: currentUser.id,
-      updated_by: currentUser.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function updateJobRecord(id, payload, currentUser) {
-  const allowedKeys = [
-    "title",
-    "client_name",
-    "location",
-    "status",
-    "job_type",
-    "department",
-    "openings",
-    "salary",
-    "description",
-    "requirements",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("jobs")
-    .update({
-      ...cleanPayload,
-      updated_by: currentUser.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function deleteJobRecord(id) {
-  const { error } = await supabase
-    .from("jobs")
-    .delete()
-    .eq("id", id);
-
-  if (error) throw error;
-  return true;
-}
-
 export default function Jobs() {
   const { authUser } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [attachmentRow, setAttachmentRow] = useState(null);
   const [form, setForm] = useState({});
   const { tableColumns, formColumns } = useModuleColumns("jobs");
 
@@ -114,44 +38,85 @@ export default function Jobs() {
     enabled: !!authUser?.id,
   });
 
+  const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
+
   const createMutation = useMutation({
-    mutationFn: (payload) => createJobRecord(payload, authUser),
+    mutationFn: async (payload) => {
+      const profile = await getProfileOrThrow(authUser.id);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("jobs")
+        .insert({
+          ...cleanPayload,
+          organization_id: profile.organization_id,
+          created_by: authUser.id,
+          updated_by: authUser.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
-      resetForm();
+      setForm({});
+      setEditingId(null);
       setOpen(false);
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) => updateJobRecord(id, payload, authUser),
+    mutationFn: async ({ id, payload }) => {
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
+      );
+
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({
+          ...cleanPayload,
+          updated_by: authUser.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
-      resetForm();
+      setForm({});
+      setEditingId(null);
       setOpen(false);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteJobRecord,
+    mutationFn: async (id) => {
+      const { error } = await supabase.from("jobs").delete().eq("id", id);
+      if (error) throw error;
+      return true;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
     },
   });
 
-  const resetForm = () => {
+  const openAddModal = () => {
     setForm({});
     setEditingId(null);
-  };
-
-  const openAddModal = () => {
-    resetForm();
     setOpen(true);
   };
 
   const openEditModal = (job) => {
-    setEditingId(job.id);
     setForm(job);
+    setEditingId(job.id);
     setOpen(true);
   };
 
@@ -173,16 +138,14 @@ export default function Jobs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Jobs</h1>
-          <p className="text-muted-foreground">
-            Manage shared job records for your organization.
-          </p>
+          <p className="text-muted-foreground">Manage shared job records for your organization.</p>
         </div>
         <button
           onClick={openAddModal}
-          className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
         >
           + Add Job
         </button>
@@ -196,27 +159,27 @@ export default function Jobs() {
         ) : jobs.length === 0 ? (
           <div className="p-6 text-muted-foreground">No jobs yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {tableColumns.map((col) => (
-                  <th key={col.field_key} className="px-4 py-3 text-left">
+                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
                     {col.field_label}
-                  </th>
+                  </TableHead>
                 ))}
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {jobs.map((job) => (
-                <tr key={job.id} className="border-t">
+                <TableRow key={job.id}>
                   {tableColumns.map((col) => (
-                    <td key={col.field_key} className="px-4 py-3">
+                    <TableCell key={col.field_key} className="px-4 py-3">
                       {renderCellValue(job, col.field_key)}
-                    </td>
+                    </TableCell>
                   ))}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                  <TableCell className="px-4 py-3">
+                    <div className="flex justify-end gap-2 flex-wrap">
                       <button
                         onClick={() => openEditModal(job)}
                         className="rounded-lg border px-3 py-1.5"
@@ -224,10 +187,14 @@ export default function Jobs() {
                         Edit
                       </button>
                       <button
+                        onClick={() => setAttachmentRow(job)}
+                        className="rounded-lg border px-3 py-1.5"
+                      >
+                        Attachments
+                      </button>
+                      <button
                         onClick={() => {
-                          const confirmed = window.confirm(
-                            "Are you sure you want to delete this record?"
-                          );
+                          const confirmed = window.confirm("Are you sure you want to delete this record?");
                           if (confirmed) {
                             deleteMutation.mutate(job.id);
                           }
@@ -237,11 +204,11 @@ export default function Jobs() {
                         Delete
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 
@@ -287,6 +254,17 @@ export default function Jobs() {
           </div>
         </form>
       </RecordFormModal>
+
+      <Dialog open={!!attachmentRow} onOpenChange={(value) => !value && setAttachmentRow(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Job Attachments</DialogTitle>
+          </DialogHeader>
+          {attachmentRow && (
+            <AttachmentUploader module="jobs" recordId={attachmentRow.id} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
