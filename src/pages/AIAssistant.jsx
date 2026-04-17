@@ -19,11 +19,17 @@ export default function AIAssistant() {
       });
 
       if (error) {
-        throw error;
+        console.error("AI function error:", error);
+        throw new Error(error.message || "Edge function returned an error");
       }
 
-      setReply(data?.reply || "No response received.");
+      if (!data) {
+        throw new Error("No data returned from AI function");
+      }
+
+      setReply(data.reply || data.output || JSON.stringify(data, null, 2));
     } catch (error) {
+      console.error("AI assistant failure:", error);
       setErrorText(error.message || "Unable to connect to AI service.");
     } finally {
       setLoading(false);
@@ -61,7 +67,7 @@ export default function AIAssistant() {
       </form>
 
       {errorText ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3">
+        <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 whitespace-pre-wrap">
           ⚠️ {errorText}
         </div>
       ) : null}

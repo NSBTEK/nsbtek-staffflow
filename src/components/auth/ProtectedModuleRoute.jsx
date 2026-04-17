@@ -1,7 +1,7 @@
 import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { useCurrentUser } from "@/lib/useCurrentUser";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canView } from "@/lib/permissions";
 
 export default function ProtectedModuleRoute({ module }) {
@@ -28,8 +28,6 @@ export default function ProtectedModuleRoute({ module }) {
           <h1 className="text-xl font-semibold text-red-300">Profile load failed</h1>
           <p className="mt-3 text-sm text-white/70">
             The app could not load your profile from the <code>profiles</code> table.
-            This usually means your profile row is missing, blocked by RLS, or missing
-            <code> organization_id</code>.
           </p>
           <pre className="mt-4 text-xs whitespace-pre-wrap rounded-lg bg-black/30 p-3 text-red-200">
             {String(error?.message || error)}
@@ -45,8 +43,7 @@ export default function ProtectedModuleRoute({ module }) {
         <div className="max-w-xl w-full rounded-2xl border border-yellow-500/20 bg-white/5 p-6">
           <h1 className="text-xl font-semibold text-yellow-300">Profile not found</h1>
           <p className="mt-3 text-sm text-white/70">
-            You are logged in, but no matching application profile was found in
-            <code> public.profiles</code>.
+            You are logged in, but no matching application profile was found in <code>public.profiles</code>.
           </p>
         </div>
       </div>

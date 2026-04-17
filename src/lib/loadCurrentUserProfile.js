@@ -47,10 +47,7 @@ export async function loadCurrentUserProfile(authUser) {
 
     for (const row of permissions || []) {
       const current = roleGroupPermissions[row.module_key];
-      roleGroupPermissions[row.module_key] = mergePermissionLevels(
-        current,
-        row.permission_level
-      );
+      roleGroupPermissions[row.module_key] = mergePermissionLevels(current, row.permission_level);
     }
   }
 

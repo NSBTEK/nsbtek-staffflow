@@ -1,150 +1,100 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
-
-async function listActivities(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const { data, error } = await supabase
-    .from("activities")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
-}
-
-async function createActivityRecord(payload, currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const allowedKeys = [
-    "subject",
-    "activity_type",
-    "related_to",
-    "assigned_to",
-    "due_date",
-    "status",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("activities")
-    .insert({
-      ...cleanPayload,
-      organization_id: profile.organization_id,
-      created_by: currentUser.id,
-      updated_by: currentUser.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function updateActivityRecord(id, payload, currentUser) {
-  const allowedKeys = [
-    "subject",
-    "activity_type",
-    "related_to",
-    "assigned_to",
-    "due_date",
-    "status",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("activities")
-    .update({
-      ...cleanPayload,
-      updated_by: currentUser.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function deleteActivityRecord(id) {
-  const { error } = await supabase
-    .from("activities")
-    .delete()
-    .eq("id", id);
-
-  if (error) throw error;
-  return true;
-}
+import { useAuth } from "@/lib/AuthContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canEdit } from "@/lib/permissions";
+import { listModuleRows, createModuleRow, updateModuleRow, deleteModuleRow } from "@/lib/supabaseCrud";
+import { toast } from "sonner";
 
 export default function Activities() {
   const { authUser } = useAuth();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const { tableColumns, formColumns } = useModuleColumns("activities");
 
-  const { data: activities = [], isLoading, error } = useQuery({
+  const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["activities", authUser?.id],
-    queryFn: () => listActivities(authUser),
+    queryFn: () =>
+      listModuleRows({
+        table: "activities",
+        module: "activities",
+        currentUser: authUser,
+      }),
     enabled: !!authUser?.id,
   });
 
+  const allowedKeys = formColumns.map((f) => f.field_key);
+
   const createMutation = useMutation({
-    mutationFn: (payload) => createActivityRecord(payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
-      resetForm();
+    mutationFn: (payload) =>
+      createModuleRow({
+        table: "activities",
+        module: "activities",
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Activity created");
+      await queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
+      setForm({});
+      setEditingId(null);
       setOpen(false);
     },
+    onError: (error) => toast.error(error.message || "Failed to create activity"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) => updateActivityRecord(id, payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
-      resetForm();
+    mutationFn: ({ id, payload }) =>
+      updateModuleRow({
+        table: "activities",
+        module: "activities",
+        id,
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Activity updated");
+      await queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
+      setForm({});
+      setEditingId(null);
       setOpen(false);
     },
+    onError: (error) => toast.error(error.message || "Failed to update activity"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteActivityRecord,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
+    mutationFn: (id) =>
+      deleteModuleRow({
+        table: "activities",
+        module: "activities",
+        id,
+        currentUser: authUser,
+      }),
+    onSuccess: async () => {
+      toast.success("Activity deleted");
+      await queryClient.invalidateQueries({ queryKey: ["activities", authUser?.id] });
     },
+    onError: (error) => toast.error(error.message || "Failed to delete activity"),
   });
 
-  const resetForm = () => {
-    setForm({});
-    setEditingId(null);
-  };
-
   const openAddModal = () => {
-    resetForm();
+    setEditingId(null);
+    setForm({});
     setOpen(true);
   };
 
-  const openEditModal = (activity) => {
-    setEditingId(activity.id);
-    setForm(activity);
+  const openEditModal = (row) => {
+    setEditingId(row.id);
+    setForm(row);
     setOpen(true);
   };
 
@@ -157,28 +107,32 @@ export default function Activities() {
     }
   };
 
-  const renderCellValue = (activity, fieldKey) => {
-    const value = activity[fieldKey];
+  const renderCellValue = (row, fieldKey) => {
+    const value = row[fieldKey];
     if (value === null || value === undefined || value === "") return "-";
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return value;
   };
+
+  if (userLoading) return <div className="p-6">Loading profile...</div>;
+
+  const editable = canEdit(user, "activities");
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Activities</h1>
-          <p className="text-muted-foreground">
-            Manage shared activity records for your organization.
-          </p>
+          <p className="text-muted-foreground">Track follow-ups, tasks, and activity history.</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Activity
-        </button>
+        {editable && (
+          <button
+            onClick={openAddModal}
+            className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          >
+            + Add Activity
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl border overflow-hidden bg-card">
@@ -186,8 +140,8 @@ export default function Activities() {
           <div className="p-6">Loading activities...</div>
         ) : error ? (
           <div className="p-6 text-red-600">{error.message}</div>
-        ) : activities.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No activities yet.</div>
+        ) : rows.length === 0 ? (
+          <div className="p-6 text-muted-foreground">No activity records found.</div>
         ) : (
           <Table>
             <TableHeader>
@@ -197,40 +151,36 @@ export default function Activities() {
                     {col.field_label}
                   </TableHead>
                 ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+                {editable && <TableHead className="px-4 py-3 text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {activities.map((activity) => (
-                <TableRow key={activity.id}>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
                   {tableColumns.map((col) => (
                     <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(activity, col.field_key)}
+                      {renderCellValue(row, col.field_key)}
                     </TableCell>
                   ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEditModal(activity)}
-                        className="rounded-lg border px-3 py-1.5"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            "Are you sure you want to delete this record?"
-                          );
-                          if (confirmed) {
-                            deleteMutation.mutate(activity.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </TableCell>
+                  {editable && (
+                    <TableCell className="px-4 py-3">
+                      <div className="flex justify-end gap-2 flex-wrap">
+                        <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Are you sure you want to delete this record?")) {
+                              deleteMutation.mutate(row.id);
+                            }
+                          }}
+                          className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -238,17 +188,10 @@ export default function Activities() {
         )}
       </div>
 
-      <RecordFormModal
-        open={open}
-        onOpenChange={setOpen}
-        title={editingId ? "Edit Activity" : "Add Activity"}
-      >
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Activity" : "Add Activity"}>
         <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
           {formColumns.map((field) => (
-            <div
-              key={field.field_key}
-              className={field.field_type === "textarea" ? "md:col-span-2" : ""}
-            >
+            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
               <label className="block text-sm mb-1">
                 {field.field_label}
                 {field.required && <span className="text-red-500 ml-1">*</span>}
@@ -256,25 +199,15 @@ export default function Activities() {
               <DynamicField
                 field={field}
                 value={form[field.field_key]}
-                onChange={(key, value) =>
-                  setForm((prev) => ({ ...prev, [key]: value }))
-                }
+                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
               />
             </div>
           ))}
-
           <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg border px-4 py-2"
-            >
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
               Cancel
             </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 text-white px-4 py-2"
-            >
+            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
               {editingId ? "Update Activity" : "Save Activity"}
             </button>
           </div>

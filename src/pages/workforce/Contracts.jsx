@@ -1,124 +1,100 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
 import RecordFormModal from "@/components/shared/RecordFormModal";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
-
-async function listContracts(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  let query = supabase
-    .from("contracts")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
-
-  if (profile.role === "employee") {
-    query = query.eq("created_by", currentUser.id);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
-}
+import { useAuth } from "@/lib/AuthContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canEdit } from "@/lib/permissions";
+import { listModuleRows, createModuleRow, updateModuleRow, deleteModuleRow } from "@/lib/supabaseCrud";
+import { toast } from "sonner";
 
 export default function Contracts() {
   const { authUser } = useAuth();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const { tableColumns, formColumns } = useModuleColumns("contracts");
 
-  const { data: contracts = [], isLoading, error } = useQuery({
+  const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["contracts", authUser?.id],
-    queryFn: () => listContracts(authUser),
+    queryFn: () =>
+      listModuleRows({
+        table: "contracts",
+        module: "contracts",
+        currentUser: authUser,
+      }),
     enabled: !!authUser?.id,
   });
 
+  const allowedKeys = formColumns.map((f) => f.field_key);
+
   const createMutation = useMutation({
-    mutationFn: async (payload) => {
-      const profile = await getProfileOrThrow(authUser.id);
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("contracts")
-        .insert({
-          ...cleanPayload,
-          organization_id: profile.organization_id,
-          created_by: authUser.id,
-          updated_by: authUser.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
+    mutationFn: (payload) =>
+      createModuleRow({
+        table: "contracts",
+        module: "contracts",
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Contract created");
+      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
       setForm({});
       setEditingId(null);
       setOpen(false);
     },
+    onError: (error) => toast.error(error.message || "Failed to create contract"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("contracts")
-        .update({
-          ...cleanPayload,
-          updated_by: authUser.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
+    mutationFn: ({ id, payload }) =>
+      updateModuleRow({
+        table: "contracts",
+        module: "contracts",
+        id,
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Contract updated");
+      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
       setForm({});
       setEditingId(null);
       setOpen(false);
     },
+    onError: (error) => toast.error(error.message || "Failed to update contract"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const { error } = await supabase.from("contracts").delete().eq("id", id);
-      if (error) throw error;
-      return true;
+    mutationFn: (id) =>
+      deleteModuleRow({
+        table: "contracts",
+        module: "contracts",
+        id,
+        currentUser: authUser,
+      }),
+    onSuccess: async () => {
+      toast.success("Contract deleted");
+      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
-    },
+    onError: (error) => toast.error(error.message || "Failed to delete contract"),
   });
 
   const openAddModal = () => {
-    setForm({});
     setEditingId(null);
+    setForm({});
     setOpen(true);
   };
 
   const openEditModal = (row) => {
-    setForm(row);
     setEditingId(row.id);
+    setForm(row);
     setOpen(true);
   };
 
@@ -138,19 +114,25 @@ export default function Contracts() {
     return value;
   };
 
+  if (userLoading) return <div className="p-6">Loading profile...</div>;
+
+  const editable = canEdit(user, "contracts");
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Contracts</h1>
-          <p className="text-muted-foreground">Manage workforce contracts.</p>
+          <p className="text-muted-foreground">Manage workforce contracts and agreement records.</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Contract
-        </button>
+        {editable && (
+          <button
+            onClick={openAddModal}
+            className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
+          >
+            + Add Contract
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl border overflow-hidden bg-card">
@@ -158,8 +140,8 @@ export default function Contracts() {
           <div className="p-6">Loading contracts...</div>
         ) : error ? (
           <div className="p-6 text-red-600">{error.message}</div>
-        ) : contracts.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No contracts yet.</div>
+        ) : rows.length === 0 ? (
+          <div className="p-6 text-muted-foreground">No contract records found.</div>
         ) : (
           <Table>
             <TableHeader>
@@ -169,34 +151,36 @@ export default function Contracts() {
                     {col.field_label}
                   </TableHead>
                 ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+                {editable && <TableHead className="px-4 py-3 text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {contracts.map((row) => (
+              {rows.map((row) => (
                 <TableRow key={row.id}>
                   {tableColumns.map((col) => (
                     <TableCell key={col.field_key} className="px-4 py-3">
                       {renderCellValue(row, col.field_key)}
                     </TableCell>
                   ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this record?")) {
-                            deleteMutation.mutate(row.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </TableCell>
+                  {editable && (
+                    <TableCell className="px-4 py-3">
+                      <div className="flex justify-end gap-2 flex-wrap">
+                        <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Are you sure you want to delete this record?")) {
+                              deleteMutation.mutate(row.id);
+                            }
+                          }}
+                          className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

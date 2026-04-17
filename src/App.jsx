@@ -9,7 +9,9 @@ import AppLayout from "@/components/layout/AppLayout";
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
+import ResetPassword from "@/pages/ResetPassword";
 import Unauthorized from "@/pages/Unauthorized";
+
 import Dashboard from "@/pages/Dashboard";
 import Clients from "@/pages/Clients";
 import Contacts from "@/pages/Contacts";
@@ -23,16 +25,17 @@ import AIAssistant from "@/pages/AIAssistant";
 import ResumeParser from "@/pages/ResumeParser";
 import ClientBilling from "@/pages/ClientBilling";
 import RequestAccess from "@/pages/RequestAccess";
+
 import ColumnSettings from "@/pages/admin/ColumnSettings";
 import UserManagement from "@/pages/admin/UserManagement";
 import RoleGroups from "@/pages/admin/RoleGroups";
 import Integrations from "@/pages/admin/Integrations";
+
 import Timesheets from "@/pages/workforce/Timesheets";
 import Expenses from "@/pages/workforce/Expenses";
 import Contracts from "@/pages/workforce/Contracts";
 import Onboarding from "@/pages/workforce/Onboarding";
 import Payroll from "@/pages/workforce/Payroll";
-import ResetPassword from "@/pages/ResetPassword";
 
 const BASENAME = import.meta.env.BASE_URL || "/";
 
@@ -97,7 +100,9 @@ export default function App() {
                 <Route index element={<ClientBilling />} />
               </Route>
 
-              <Route path="/request-access" element={<RequestAccess />} />
+              <Route path="/request-access" element={<ProtectedModuleRoute module="request_access" />}>
+                <Route index element={<RequestAccess />} />
+              </Route>
 
               <Route path="/timesheets" element={<ProtectedModuleRoute module="timesheets" />}>
                 <Route index element={<Timesheets />} />
@@ -119,7 +124,7 @@ export default function App() {
                 <Route index element={<Payroll />} />
               </Route>
 
-              <Route path="/admin/columns" element={<ProtectedModuleRoute module="users" />}>
+              <Route path="/admin/columns" element={<ProtectedModuleRoute module="columns" />}>
                 <Route index element={<ColumnSettings />} />
               </Route>
 
@@ -131,7 +136,7 @@ export default function App() {
                 <Route index element={<RoleGroups />} />
               </Route>
 
-              <Route path="/admin/integrations" element={<ProtectedModuleRoute module="users" />}>
+              <Route path="/admin/integrations" element={<ProtectedModuleRoute module="integrations" />}>
                 <Route index element={<Integrations />} />
               </Route>
 

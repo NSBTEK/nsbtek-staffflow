@@ -1,26 +1,26 @@
 export const MODULES = [
-  "dashboard",
-  "clients",
-  "contacts",
-  "activities",
-  "jobs",
-  "candidates",
-  "submissions",
-  "interviews",
-  "placements",
-  "timesheets",
-  "expenses",
-  "contracts",
-  "onboarding",
-  "payroll",
-  "ai_assistant",
-  "resume_parser",
-  "client_billing",
-  "request_access",
-  "users",
-  "columns",
-  "integrations",
-  "admin_setup",
+  { key: "dashboard", section: "Core", label: "Dashboard" },
+  { key: "clients", section: "CRM", label: "Clients" },
+  { key: "contacts", section: "CRM", label: "Contacts" },
+  { key: "activities", section: "CRM", label: "Activities" },
+  { key: "jobs", section: "ATS", label: "Jobs" },
+  { key: "candidates", section: "ATS", label: "Candidates" },
+  { key: "submissions", section: "ATS", label: "Submissions" },
+  { key: "interviews", section: "ATS", label: "Interviews" },
+  { key: "placements", section: "ATS", label: "Placements" },
+  { key: "timesheets", section: "Workforce", label: "Timesheets" },
+  { key: "expenses", section: "Workforce", label: "Expenses" },
+  { key: "contracts", section: "Workforce", label: "Contracts" },
+  { key: "onboarding", section: "Workforce", label: "Onboarding" },
+  { key: "payroll", section: "Workforce", label: "Payroll" },
+  { key: "ai_assistant", section: "AI", label: "AI Assistant" },
+  { key: "resume_parser", section: "AI", label: "Resume Parser" },
+  { key: "client_billing", section: "Finance", label: "Client Billing" },
+  { key: "request_access", section: "Admin", label: "Request Access" },
+  { key: "users", section: "Admin", label: "Users" },
+  { key: "columns", section: "Admin", label: "Column Settings" },
+  { key: "integrations", section: "Admin", label: "Integrations" },
+  { key: "admin_setup", section: "Admin", label: "Admin Setup" },
 ];
 
 const rolePermissions = {
@@ -124,16 +124,10 @@ const rolePermissions = {
 
 export function getEffectivePermissions(user) {
   if (!user) return {};
-
   const roleDefaults = rolePermissions[user.role] || {};
   const roleGroupPermissions = user.role_group_permissions || {};
   const explicitPermissions = user.permissions || {};
-
-  return {
-    ...roleDefaults,
-    ...roleGroupPermissions,
-    ...explicitPermissions,
-  };
+  return { ...roleDefaults, ...roleGroupPermissions, ...explicitPermissions };
 }
 
 export function getPermissionLevel(user, module) {
@@ -156,7 +150,6 @@ export function canView(user, module) {
 export function canEdit(user, module) {
   if (!user || user.status === "deactivated") return false;
   if (user.role === "admin") return true;
-
   const level = getPermissionLevel(user, module);
   return ["edit", "own"].includes(level);
 }
