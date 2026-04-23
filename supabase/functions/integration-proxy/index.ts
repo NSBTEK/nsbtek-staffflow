@@ -1,53 +1,58 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    },
-  });
-}
+import { requireUser } from "../_shared/auth.ts";
+import { json } from "../_shared/response.ts";
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get("origin");
+
+  if (req.method === "OPTIONS") {
+    return json({ ok: true }, 200, origin);
+  }
+
   try {
-    if (req.method === "OPTIONS") return json({ ok: true });
+    const authHeader = req.headers.get("Authorization");
+    const { profile } = await requireUser(authHeader);
+
+    if (!["company_admin", "platform_admin"].includes(profile.role)) {
+      return json({ error: "Forbidden" }, 403, origin);
+    }
 
     const body = await req.json();
-    const { providerKey, action, credentials, settings } = body;
+    const { action, providerKey, credentials, settings } = body;
 
-    if (!providerKey || !action) {
-      return json({ error: "providerKey and action are required" }, 400);
+    if (!action || !providerKey) {
+      return json({ error: "action and providerKey are required" }, 400, origin);
     }
 
-    switch (action) {
-      case "validate_connection": {
-        return json({
-          ok: true,
-          providerKey,
-          status: "connected",
-          normalized: {
-            credentials: credentials || {},
-            settings: settings || {},
-          },
-        });
-      }
-      case "sync_preview": {
-        return json({
-          ok: true,
-          providerKey,
-          items: [
-            { id: "sample-1", title: `${providerKey} sample item 1` },
-            { id: "sample-2", title: `${providerKey} sample item 2` },
-          ],
-        });
-      }
-      default:
-        return json({ error: `Unsupported action: ${action}` }, 400);
+    if (action === "validate_connection") {
+      return json({
+        ok: true,
+        providerKey,
+        status: "connected",
+        normalized: {
+          credentials: credentials || {},
+          settings: settings || {},
+        },
+      }, 200, origin);
     }
+
+    if (action === "sync_preview") {
+      return json({
+        ok: true,
+        providerKey,
+        items: [
+          { id: "preview-1", name: `${providerKey} preview item 1` },
+          { id: "preview-2", name: `${providerKey} preview item 2` },
+        ],
+      }, 200, origin);
+    }
+
+    return json({ error: "Unsupported action" }, 400, origin);
   } catch (error) {
-    return json({ error: String(error) }, 500);
+    return json(
+      { error: error instanceof Error ? error.message : "Unexpected error" },
+      500,
+      origin
+    );
   }
 });

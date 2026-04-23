@@ -6,6 +6,17 @@ import {
   assertCanEditModule,
 } from "@/lib/moduleAccess";
 
+function sanitizePayload(payload, allowedKeys = []) {
+  const clean = Object.fromEntries(
+    Object.entries(payload || {}).filter(([key, value]) => {
+      if (!allowedKeys.includes(key)) return false;
+      return value !== undefined;
+    })
+  );
+
+  return clean;
+}
+
 export async function listModuleRows({
   table,
   module,
@@ -16,6 +27,8 @@ export async function listModuleRows({
   ownerColumn = "created_by",
   orgColumn = "organization_id",
 }) {
+  if (!currentUser?.id) throw new Error("Missing authenticated user");
+
   const profile = await getProfileOrThrow(currentUser.id);
 
   let query = supabase
@@ -43,23 +56,24 @@ export async function createModuleRow({
   allowedKeys,
   extra = {},
 }) {
-  const profile = await getProfileOrThrow(currentUser.id);
+  if (!currentUser?.id) throw new Error("Missing authenticated user");
 
+  const profile = await getProfileOrThrow(currentUser.id);
   assertCanEditModule(profile, module);
 
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
+  const cleanPayload = sanitizePayload(payload, allowedKeys);
+
+  const insertPayload = {
+    ...cleanPayload,
+    ...extra,
+    organization_id: profile.organization_id,
+    created_by: currentUser.id,
+    updated_by: currentUser.id,
+  };
 
   const { data, error } = await supabase
     .from(table)
-    .insert({
-      ...cleanPayload,
-      ...extra,
-      organization_id: profile.organization_id,
-      created_by: currentUser.id,
-      updated_by: currentUser.id,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -77,11 +91,15 @@ export async function updateModuleRow({
   ownerColumn = "created_by",
   orgColumn = "organization_id",
 }) {
-  const profile = await getProfileOrThrow(currentUser.id);
+  if (!currentUser?.id) throw new Error("Missing authenticated user");
+  if (!id) throw new Error("Missing record id");
 
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
+  const profile = await getProfileOrThrow(currentUser.id);
+  const cleanPayload = sanitizePayload(payload, allowedKeys);
+
+  if (Object.keys(cleanPayload).length === 0) {
+    throw new Error("No valid fields to update");
+  }
 
   let query = supabase
     .from(table)
@@ -113,6 +131,9 @@ export async function deleteModuleRow({
   ownerColumn = "created_by",
   orgColumn = "organization_id",
 }) {
+  if (!currentUser?.id) throw new Error("Missing authenticated user");
+  if (!id) throw new Error("Missing record id");
+
   const profile = await getProfileOrThrow(currentUser.id);
 
   let query = supabase.from(table).delete().eq("id", id);

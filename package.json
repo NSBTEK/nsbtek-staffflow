@@ -7,9 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check": "npm run lint && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",

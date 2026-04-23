@@ -1,6 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/lib/AuthContext";
-import { getProfileOrThrow } from "@/lib/profile";
+import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   assignRoleGroupToUser,
@@ -14,9 +12,22 @@ import {
   saveRoleGroupPermissions,
   updateRoleGroup,
 } from "@/api/roleGroups";
+import { useAuth } from "@/lib/AuthContext";
+import AppLayout from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Shield, Pencil, Trash2, Copy, Plus, Search } from "lucide-react";
+import {
+  Shield,
+  Pencil,
+  Trash2,
+  Copy,
+  Plus,
+  Search,
+  Users,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
 
 const MODULES = [
   "dashboard",
@@ -40,6 +51,7 @@ const MODULES = [
   "users",
   "columns",
   "integrations",
+  "audit_logs",
 ];
 
 const LEVELS = ["none", "view", "edit", "own", "view_own"];
@@ -54,7 +66,7 @@ function permissionsArrayToMap(rows = []) {
 
 function SectionCard({ title, subtitle, children, right }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
         <div>
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
@@ -65,6 +77,10 @@ function SectionCard({ title, subtitle, children, right }) {
       <div className="p-5">{children}</div>
     </div>
   );
+}
+
+function EmptyState({ text }) {
+  return <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">{text}</div>;
 }
 
 export default function RoleGroups() {
@@ -84,23 +100,24 @@ export default function RoleGroups() {
     description: "",
     is_active: true,
   });
+  const [selectedUserId, setSelectedUserId] = useState("");
 
-  const { data: currentProfile } = useQuery({
-    queryKey: ["current-user-profile", authUser?.id],
-    queryFn: () => getProfileOrThrow(authUser.id),
-    enabled: !!authUser?.id,
-  });
-
-  const isAdmin = currentProfile?.role === "admin";
-
-  const { data: groups = [], isLoading: groupsLoading, error: groupsError } = useQuery({
+  const { data: groups = [], isLoading: groupsLoading } = useQuery({
     queryKey: ["role-groups", authUser?.id],
     queryFn: () => listRoleGroups(authUser),
     enabled: !!authUser?.id,
   });
 
-  const { data: users = [] } = useQuery({
-    queryKey: ["profiles-list", authUser?.id],
+  const activeSelectedGroupId = selectedGroupId || groups[0]?.id || null;
+
+  const { data: permissionRows = [] } = useQuery({
+    queryKey: ["role-group-permissions", activeSelectedGroupId],
+    queryFn: () => listRoleGroupPermissions(activeSelectedGroupId, authUser),
+    enabled: !!activeSelectedGroupId && !!authUser?.id,
+  });
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ["profiles-for-role-groups", authUser?.id],
     queryFn: () => listProfiles(authUser),
     enabled: !!authUser?.id,
   });
@@ -111,48 +128,15 @@ export default function RoleGroups() {
     enabled: !!authUser?.id,
   });
 
-  const { data: currentPermissions = [] } = useQuery({
-    queryKey: ["role-group-permissions", selectedGroupId],
-    queryFn: () => listRoleGroupPermissions(selectedGroupId),
-    enabled: !!selectedGroupId,
-  });
-
   const currentPermissionsMap = useMemo(
-    () => permissionsArrayToMap(currentPermissions),
-    [currentPermissions]
+    () => permissionsArrayToMap(permissionRows),
+    [permissionRows]
   );
-
-  useEffect(() => {
-    if (!selectedGroupId && groups.length > 0) {
-      setSelectedGroupId(groups[0].id);
-    } else if (
-      selectedGroupId &&
-      groups.length > 0 &&
-      !groups.some((g) => g.id === selectedGroupId)
-    ) {
-      setSelectedGroupId(groups[0].id);
-    }
-  }, [groups, selectedGroupId]);
-
-  useEffect(() => {
-    if (!selectedGroupId) return;
-    setPermissionDraft(currentPermissionsMap);
-  }, [selectedGroupId, currentPermissionsMap]);
 
   const selectedGroup = useMemo(
-    () => groups.find((g) => g.id === selectedGroupId) || null,
-    [groups, selectedGroupId]
+    () => groups.find((g) => g.id === activeSelectedGroupId) || null,
+    [groups, activeSelectedGroupId]
   );
-
-  useEffect(() => {
-    if (selectedGroup) {
-      setEditForm({
-        name: selectedGroup.name || "",
-        description: selectedGroup.description || "",
-        is_active: selectedGroup.is_active ?? true,
-      });
-    }
-  }, [selectedGroup]);
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -164,126 +148,110 @@ export default function RoleGroups() {
     );
   }, [groups, search]);
 
-  const groupAssignments = useMemo(() => {
+  const userGroupsByUserId = useMemo(() => {
     const map = {};
     userRoleGroups.forEach((row) => {
-      map[row.user_id] = row.role_group_id;
+      if (!map[row.user_id]) map[row.user_id] = [];
+      map[row.user_id].push(row);
     });
     return map;
   }, [userRoleGroups]);
 
-  const assignmentRowsByUserId = useMemo(() => {
-    const map = {};
-    userRoleGroups.forEach((row) => {
-      map[row.user_id] = row;
-    });
-    return map;
-  }, [userRoleGroups]);
-
-  const usersByBaseRole = useMemo(() => {
-    const grouped = {};
-    users.forEach((user) => {
-      const role = user.role || "unassigned";
-      if (!grouped[role]) grouped[role] = [];
-      grouped[role].push(user);
-    });
-    return grouped;
-  }, [users]);
-
-  const refreshAssignments = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["user-role-groups", authUser?.id] });
-    await queryClient.invalidateQueries({ queryKey: ["profiles-list", authUser?.id] });
-  };
+  const selectableProfiles = useMemo(() => {
+    return profiles.map((profile) => ({
+      value: profile.id,
+      label: profile.full_name || profile.email || profile.id,
+      description: `${profile.role || "user"}${profile.email ? ` • ${profile.email}` : ""}`,
+    }));
+  }, [profiles]);
 
   const createMutation = useMutation({
     mutationFn: (payload) => createRoleGroup(payload, authUser),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ["role-groups", authUser?.id] });
+      if (created?.id) {
+        setSelectedGroupId(created.id);
+        setEditForm({
+          name: created.name || "",
+          description: created.description || "",
+          is_active: created.is_active ?? true,
+        });
+        setPermissionDraft({});
+      }
       setCreateForm({ name: "", description: "", is_active: true });
+      toast.success("Role group created");
     },
+    onError: (err) => toast.error(err?.message || "Failed to create role group"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) => updateRoleGroup(id, payload),
+    mutationFn: ({ id, payload }) => updateRoleGroup(id, payload, authUser),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["role-groups", authUser?.id] });
+      toast.success("Role group updated");
     },
+    onError: (err) => toast.error(err?.message || "Failed to update role group"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteRoleGroup,
+    mutationFn: (id) => deleteRoleGroup(id, authUser),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["role-groups", authUser?.id] });
       setSelectedGroupId(null);
+      setEditForm({ name: "", description: "", is_active: true });
+      setPermissionDraft({});
+      toast.success("Role group deleted");
     },
+    onError: (err) => toast.error(err?.message || "Failed to delete role group"),
   });
 
-  const cloneMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedGroup) throw new Error("No role group selected");
-
-      const group = await createRoleGroup(
-        {
-          name: `${selectedGroup.name} Copy`,
-          description: selectedGroup.description || "",
-          is_active: true,
-        },
-        authUser
-      );
-
-      await saveRoleGroupPermissions(
-        group.id,
-        MODULES.map((module_key) => ({
-          module_key,
-          permission_level: permissionDraft[module_key] || "none",
-        })),
-        authUser
-      );
-
-      return group;
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["role-groups", authUser?.id] });
-      await queryClient.invalidateQueries({ queryKey: ["role-group-permissions"] });
-    },
-  });
-
-  const savePermissionsMutation = useMutation({
-    mutationFn: () =>
-      saveRoleGroupPermissions(
-        selectedGroupId,
-        MODULES.map((module_key) => ({
-          module_key,
-          permission_level: permissionDraft[module_key] || "none",
-        })),
-        authUser
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["role-group-permissions", selectedGroupId],
-      });
-    },
-    onError: (error) => {
-      alert(error.message || "Failed to save permissions");
-    },
-  });
+  const permissionsMutation = useMutation({
+  mutationFn: ({ roleGroupId, permissions }) =>
+    saveRoleGroupPermissions(roleGroupId, permissions, authUser),
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["role-group-permissions", activeSelectedGroupId],
+    });
+    await queryClient.invalidateQueries({ queryKey: ["current-user-profile"] });
+    await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    toast.success("Permissions saved");
+  },
+  onError: (err) => toast.error(err?.message || "Failed to save permissions"),
+});
 
   const assignMutation = useMutation({
-    mutationFn: ({ userId, roleGroupId }) =>
-      assignRoleGroupToUser(userId, roleGroupId, authUser),
-    onSuccess: refreshAssignments,
-    onError: (error) => {
-      alert(error.message || "Failed to assign group");
-    },
-  });
+  mutationFn: ({ userId, roleGroupId }) =>
+    assignRoleGroupToUser(userId, roleGroupId, authUser),
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["user-role-groups", authUser?.id] });
+    await queryClient.invalidateQueries({ queryKey: ["current-user-profile"] });
+    await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    setSelectedUserId("");
+    toast.success("Role group assigned");
+  },
+  onError: (err) => toast.error(err?.message || "Failed to assign role group"),
+});
 
   const removeMutation = useMutation({
-    mutationFn: (assignmentId) => removeRoleGroupFromUser(assignmentId),
-    onSuccess: refreshAssignments,
-    onError: (error) => {
-      alert(error.message || "Failed to clear group");
-    },
-  });
+  mutationFn: (assignmentId) => removeRoleGroupFromUser(assignmentId, authUser),
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: ["user-role-groups", authUser?.id] });
+    await queryClient.invalidateQueries({ queryKey: ["current-user-profile"] });
+    await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    toast.success("Role group removed");
+  },
+  onError: (err) => toast.error(err?.message || "Failed to remove role group"),
+});
+
+  const handleSelectGroup = (group) => {
+    setSelectedGroupId(group.id);
+    setEditForm({
+      name: group.name || "",
+      description: group.description || "",
+      is_active: group.is_active ?? true,
+    });
+    setPermissionDraft(permissionsArrayToMap(permissionRows));
+  };
 
   const handleCreate = (e) => {
     e.preventDefault();
@@ -299,322 +267,376 @@ export default function RoleGroups() {
     });
   };
 
-  if (groupsLoading) {
-    return <div className="text-sm text-slate-500">Loading role groups…</div>;
-  }
+  const handleTogglePermission = (moduleKey, level) => {
+    setPermissionDraft((prev) => ({
+      ...prev,
+      [moduleKey]: level,
+    }));
+  };
 
-  if (groupsError) {
+  const handleSavePermissions = () => {
+    if (!activeSelectedGroupId) return;
+
+    const permissions = MODULES.map((moduleKey) => ({
+      module_key: moduleKey,
+      permission_level:
+        permissionDraft[moduleKey] ??
+        currentPermissionsMap[moduleKey] ??
+        "none",
+    }));
+
+    permissionsMutation.mutate({
+      roleGroupId: activeSelectedGroupId,
+      permissions,
+    });
+  };
+
+  const handleAssign = () => {
+    if (!selectedUserId || !activeSelectedGroupId) return;
+    assignMutation.mutate({
+      userId: selectedUserId,
+      roleGroupId: activeSelectedGroupId,
+    });
+  };
+
+  const handleCopyPermissions = () => {
+    const permissionText = MODULES.map((moduleKey) => {
+      const level =
+        permissionDraft[moduleKey] ??
+        currentPermissionsMap[moduleKey] ??
+        "none";
+      return `${moduleKey}: ${level}`;
+    }).join("\n");
+
+    navigator.clipboard.writeText(permissionText);
+    toast.success("Permissions copied");
+  };
+
+  if (groupsLoading) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {groupsError.message || "Failed to load role groups."}
-      </div>
+      <AppLayout>
+        <div className="text-sm text-slate-500">Loading role groups...</div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-6 py-6 text-white shadow-lg">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-200">
-            <Shield className="h-3.5 w-3.5" />
-            Security Access
-          </div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Role Groups</h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/70">
-            Create organization-specific role groups, control module access, and assign users to the correct group.
-          </p>
-          {!isAdmin ? (
-            <p className="mt-3 text-sm text-amber-200">
-              View only. Only admins can edit groups, permissions, or assignments.
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <SectionCard
-          title="Organization Role Groups"
-          subtitle="Create and manage reusable role groups for your organization."
-          right={
-            <div className="relative w-full max-w-[180px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+    <AppLayout>
+      <div className="grid gap-6 xl:grid-cols-[320px,1fr]">
+        <div className="space-y-6">
+          <SectionCard
+            title="Role Groups"
+            subtitle="Search and select a role group"
+            right={<Shield className="h-5 w-5 text-slate-400" />}
+          >
+            <div className="mb-4 relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search groups"
+                placeholder="Search role groups"
                 className="pl-9"
               />
             </div>
-          }
-        >
-          {isAdmin ? (
-            <form onSubmit={handleCreate} className="mb-5 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-medium text-slate-900">Create Role Group</div>
+
+            <div className="space-y-2">
+              {filteredGroups.length === 0 ? (
+                <EmptyState text="No role groups found." />
+              ) : (
+                filteredGroups.map((group) => {
+                  const active = group.id === activeSelectedGroupId;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => handleSelectGroup(group)}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                        active
+                          ? "border-slate-900 bg-slate-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-900">{group.name}</div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {group.description || "No description"}
+                          </div>
+                        </div>
+                        {group.is_active ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <XCircle className="h-5 w-5 text-slate-400" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Create Role Group"
+            subtitle="Add a new permission bundle"
+            right={<Plus className="h-5 w-5 text-slate-400" />}
+          >
+            <form onSubmit={handleCreate} className="space-y-4">
               <Input
                 value={createForm.name}
-                onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Group name"
+                onChange={(e) =>
+                  setCreateForm((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="Role group name"
               />
               <Input
                 value={createForm.description}
                 onChange={(e) =>
-                  setCreateForm((prev) => ({ ...prev, description: e.target.value }))
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
                 }
                 placeholder="Description"
               />
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input
                   type="checkbox"
-                  checked={createForm.is_active}
+                  checked={!!createForm.is_active}
                   onChange={(e) =>
-                    setCreateForm((prev) => ({ ...prev, is_active: e.target.checked }))
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      is_active: e.target.checked,
+                    }))
                   }
                 />
                 Active
               </label>
-              <Button type="submit" className="w-full">
-                <Plus className="mr-2 h-4 w-4" />
-                Create Group
+              <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Creating..." : "Create Group"}
               </Button>
             </form>
-          ) : null}
-
-          <div className="space-y-3">
-            {filteredGroups.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-                No groups found.
-              </div>
-            ) : (
-              filteredGroups.map((group) => {
-                const isSelected = selectedGroupId === group.id;
-
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => setSelectedGroupId(group.id)}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
-                      isSelected
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium text-slate-900">{group.name}</div>
-                        <div className="mt-1 text-sm text-slate-500">
-                          {group.description || "No description"}
-                        </div>
-                      </div>
-                      <div
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          group.is_active
-                            ? "bg-green-100 text-green-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {group.is_active ? "Active" : "Inactive"}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </SectionCard>
+          </SectionCard>
+        </div>
 
         <div className="space-y-6">
-          <SectionCard
-            title="Selected Role Group"
-            subtitle={
-              selectedGroup
-                ? "Edit this group and customize what it can access."
-                : "Select a role group from the left."
-            }
-            right={
-              selectedGroup && isAdmin ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={() => cloneMutation.mutate()}>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Clone
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => deleteMutation.mutate(selectedGroup.id)}
+          {!selectedGroup ? (
+            <SectionCard title="Role Group Details" subtitle="Choose a role group to continue">
+              <EmptyState text="Select a role group from the left to edit permissions and assignments." />
+            </SectionCard>
+          ) : (
+            <>
+              <SectionCard
+                title="Edit Role Group"
+                subtitle="Update group name and description"
+                right={
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setEditForm({
+                          name: selectedGroup.name || "",
+                          description: selectedGroup.description || "",
+                          is_active: selectedGroup.is_active ?? true,
+                        })
+                      }
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Reset
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => deleteMutation.mutate(selectedGroup.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                }
+              >
+                <form onSubmit={handleUpdate} className="grid gap-4 md:grid-cols-2">
+                  <Input
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    placeholder="Role group name"
+                  />
+                  <Input
+                    value={editForm.description}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="Description"
+                  />
+                  <label className="flex items-center gap-2 text-sm text-slate-600 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={!!editForm.is_active}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          is_active: e.target.checked,
+                        }))
+                      }
+                    />
+                    Active
+                  </label>
+                  <div className="md:col-span-2">
+                    <Button type="submit" disabled={updateMutation.isPending}>
+                      {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                </form>
+              </SectionCard>
+
+              <SectionCard
+                title="Permissions"
+                subtitle="Set module access levels for this group"
+                right={
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handleCopyPermissions}>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy
+                    </Button>
+                    <Button
+                      onClick={handleSavePermissions}
+                      disabled={permissionsMutation.isPending}
+                    >
+                      {permissionsMutation.isPending ? "Saving..." : "Save Permissions"}
+                    </Button>
+                  </div>
+                }
+              >
+                <div className="grid gap-3">
+                  {MODULES.map((moduleKey) => {
+                    const selectedLevel =
+                      permissionDraft[moduleKey] ??
+                      currentPermissionsMap[moduleKey] ??
+                      "none";
+
+                    return (
+                      <div
+                        key={moduleKey}
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between"
+                      >
+                        <div>
+                          <div className="font-medium text-slate-900">{moduleKey}</div>
+                          <div className="text-xs text-slate-500">
+                            Configure access for this module
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {LEVELS.map((level) => {
+                            const active = selectedLevel === level;
+                            return (
+                              <button
+                                key={level}
+                                type="button"
+                                onClick={() => handleTogglePermission(moduleKey, level)}
+                                className={`rounded-xl border px-3 py-1.5 text-sm ${
+                                  active
+                                    ? "border-slate-900 bg-slate-900 text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {level}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="User Assignments"
+                subtitle="Assign this role group to users"
+                right={<Users className="h-5 w-5 text-slate-400" />}
+              >
+                <div className="flex flex-col gap-3 md:flex-row">
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="h-10 flex-1 rounded-xl border border-slate-200 px-3 text-sm"
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    <option value="">Select user</option>
+                    {selectableProfiles.map((profile) => (
+                      <option key={profile.value} value={profile.value}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button onClick={handleAssign} disabled={!selectedUserId || assignMutation.isPending}>
+                    {assignMutation.isPending ? "Assigning..." : "Assign Group"}
                   </Button>
                 </div>
-              ) : null
-            }
-          >
-            {selectedGroup ? (
-              <form onSubmit={handleUpdate} className="space-y-4">
-                <Input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="Group name"
-                  disabled={!isAdmin}
-                />
-                <Input
-                  value={editForm.description}
-                  onChange={(e) =>
-                    setEditForm((prev) => ({ ...prev, description: e.target.value }))
-                  }
-                  placeholder="Description"
-                  disabled={!isAdmin}
-                />
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={editForm.is_active}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({ ...prev, is_active: e.target.checked }))
-                    }
-                    disabled={!isAdmin}
-                  />
-                  Active
-                </label>
-                {isAdmin ? (
-                  <Button type="submit">
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Save Group
-                  </Button>
-                ) : null}
-              </form>
-            ) : (
-              <div className="text-sm text-slate-500">Select a role group from the left.</div>
-            )}
-          </SectionCard>
 
-          {selectedGroup ? (
-            <SectionCard
-              title="Module Permissions"
-              subtitle="Choose exactly what this group can access."
-              right={
-                isAdmin ? (
-                  <Button onClick={() => savePermissionsMutation.mutate()}>
-                    Save Permissions
-                  </Button>
-                ) : null
-              }
-            >
-              <div className="space-y-3">
-                {MODULES.map((moduleKey) => (
-                  <div key={moduleKey} className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="font-medium capitalize text-slate-900">
-                        {moduleKey.replaceAll("_", " ")}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {LEVELS.map((level) => (
-                          <button
-                            key={level}
-                            type="button"
-                            disabled={!isAdmin}
-                            onClick={() =>
-                              isAdmin &&
-                              setPermissionDraft((prev) => ({ ...prev, [moduleKey]: level }))
-                            }
-                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                              (permissionDraft[moduleKey] || "none") === level
-                                ? "border-blue-600 bg-blue-600 text-white"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            } ${!isAdmin ? "cursor-not-allowed opacity-70" : ""}`}
-                          >
-                            {level}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          ) : null}
-
-          <SectionCard
-            title="Organization Users by Base Role"
-            subtitle="See what users exist by role and what role group they belong to."
-          >
-            <div className="space-y-6">
-              {Object.entries(usersByBaseRole).map(([baseRole, roleUsers]) => (
-                <div key={baseRole}>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                    {baseRole}
-                  </h3>
-
-                  <div className="space-y-3">
-                    {roleUsers.map((user) => {
-                      const currentRoleGroupId = groupAssignments[user.id];
-                      const currentRoleGroup = groups.find((group) => group.id === currentRoleGroupId);
-                      const assignedRow = assignmentRowsByUserId[user.id];
+                <div className="mt-6 space-y-3">
+                  {profiles.length === 0 ? (
+                    <EmptyState text="No users available." />
+                  ) : (
+                    profiles.map((profile) => {
+                      const assignments = userGroupsByUserId[profile.id] || [];
+                      const matchingAssignments = assignments.filter(
+                        (a) => a.role_group_id === activeSelectedGroupId
+                      );
 
                       return (
                         <div
-                          key={user.id}
-                          className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between"
+                          key={profile.id}
+                          className="rounded-2xl border border-slate-200 p-4"
                         >
-                          <div>
-                            <div className="font-medium text-slate-900">
-                              {user.full_name || user.email}
+                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <div className="font-medium text-slate-900">
+                                {profile.full_name || profile.email || profile.id}
+                              </div>
+                              <div className="text-sm text-slate-500">
+                                {profile.email || "No email"} {profile.role ? `• ${profile.role}` : ""}
+                              </div>
                             </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {user.email} · base role: {user.role} · group:{" "}
-                              {currentRoleGroup?.name || "None"}
-                            </div>
-                          </div>
 
-                          <div className="flex flex-wrap gap-2">
-                            {groups.map((group) => {
-                              const active = currentRoleGroupId === group.id;
-
-                              return (
-                                <button
-                                  key={group.id}
-                                  type="button"
-                                  disabled={!isAdmin}
-                                  onClick={() => {
-                                    if (!isAdmin) return;
-                                    if (active) return;
-                                    assignMutation.mutate({
-                                      userId: user.id,
-                                      roleGroupId: group.id,
-                                    });
-                                  }}
-                                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                                    active
-                                      ? "border-blue-600 bg-blue-600 text-white"
-                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                                  } ${!isAdmin ? "cursor-not-allowed opacity-70" : ""}`}
-                                >
-                                  {group.name}
-                                </button>
-                              );
-                            })}
-
-                            {isAdmin && assignedRow?.id ? (
-                              <button
-                                type="button"
-                                onClick={() => removeMutation.mutate(assignedRow.id)}
-                                className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
-                              >
-                                Clear
-                              </button>
-                            ) : null}
+                            {matchingAssignments.length === 0 ? (
+                              <div className="text-sm text-slate-400">Not assigned</div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {matchingAssignments.map((assignment) => (
+                                  <div
+                                    key={assignment.id}
+                                    className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm"
+                                  >
+                                    <span>{selectedGroup.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeMutation.mutate(assignment.id)}
+                                      className="text-red-600"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
+                    })
+                  )}
                 </div>
-              ))}
-            </div>
-          </SectionCard>
+              </SectionCard>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

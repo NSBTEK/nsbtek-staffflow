@@ -1,56 +1,46 @@
-import {
-  listScopedRows,
-  createScopedRow,
-  updateScopedRow,
-  deleteScopedRow,
-} from "@/lib/scopedQuery";
+import { supabase } from "@/lib/supabaseClient";
+import { unwrap } from "@/api/_helpers";
 
-const TABLE = "clients";
-
-const ALLOWED_KEYS = [
-  "name",
-  "company_name",
-  "status",
-  "industry",
-  "website",
-  "phone",
-  "email",
-  "address",
-  "city",
-  "state",
-  "country",
-  "notes",
-];
-
-export function listClients(currentUser) {
-  return listScopedRows({
-    table: TABLE,
-    currentUser,
-  });
+export async function listClients() {
+  return unwrap(
+    await supabase
+      .from("clients")
+      .select("*")
+      .order("created_at", { ascending: false })
+  );
 }
 
-export function createClient(payload, currentUser) {
-  return createScopedRow({
-    table: TABLE,
-    currentUser,
-    payload,
-    allowedKeys: ALLOWED_KEYS,
-  });
+export async function getClientById(id) {
+  return unwrap(
+    await supabase
+      .from("clients")
+      .select("*")
+      .eq("id", id)
+      .single()
+  );
 }
 
-export function updateClient(id, payload, currentUser) {
-  return updateScopedRow({
-    table: TABLE,
-    id,
-    currentUser,
-    payload,
-    allowedKeys: ALLOWED_KEYS,
-  });
+export async function createClient(payload) {
+  return unwrap(
+    await supabase
+      .from("clients")
+      .insert(payload)
+      .select()
+      .single()
+  );
 }
 
-export function deleteClient(id) {
-  return deleteScopedRow({
-    table: TABLE,
-    id,
-  });
+export async function updateClient(id, payload) {
+  return unwrap(
+    await supabase
+      .from("clients")
+      .update(payload)
+      .eq("id", id)
+      .select()
+      .single()
+  );
+}
+
+export async function deleteClient(id) {
+  return unwrap(await supabase.from("clients").delete().eq("id", id));
 }

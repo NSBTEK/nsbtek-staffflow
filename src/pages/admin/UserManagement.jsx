@@ -140,19 +140,19 @@ export default function UserManagement() {
   });
 
   const resendInviteMutation = useMutation({
-  mutationFn: (payload) =>
-    resendInvite(user, {
-      ...payload,
-      redirectTo: RESET_PASSWORD_URL,
-    }),
-  onSuccess: async () => {
-    toast.success("Invitation email re-sent.");
-    await queryClient.invalidateQueries({ queryKey: ["users", user?.id] });
-  },
-  onError: (err) => {
-    toast.error(err.message || "Failed to resend invitation.");
-  },
-});
+    mutationFn: (payload) =>
+      resendInvite(user, {
+        ...payload,
+        redirectTo: RESET_PASSWORD_URL,
+      }),
+    onSuccess: async () => {
+      toast.success("Invitation email re-sent.");
+      await queryClient.invalidateQueries({ queryKey: ["users", user?.id] });
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to resend invitation.");
+    },
+  });
 
   const totalUsers = users.length;
   const activeUsers = users.filter((u) => u.status !== "inactive").length;
@@ -275,41 +275,39 @@ export default function UserManagement() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredUsers.map((member) => {
-                const manager = managers.find((m) => m.id === member.manager_id);
+              {filteredUsers.map((item) => {
+                const manager = managers.find((m) => m.id === item.manager_id);
 
                 return (
                   <div
-                    key={member.id}
+                    key={item.id}
                     className="rounded-2xl border border-slate-200 p-4 sm:p-5"
                   >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex min-w-0 items-start gap-4">
                         <Avatar className="h-11 w-11 border border-slate-200">
                           <AvatarFallback className="bg-slate-100 text-slate-700">
-                            {initials(member.full_name || member.email)}
+                            {initials(item.full_name || item.email)}
                           </AvatarFallback>
                         </Avatar>
 
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-900 sm:text-base">
-                            {member.full_name || "Unnamed User"}
+                            {item.full_name || "Unnamed User"}
                           </div>
+
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
                             <Mail className="h-3.5 w-3.5" />
-                            <span className="break-all">{member.email}</span>
+                            <span className="break-all">{item.email}</span>
                           </div>
 
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Badge variant="outline" className="border-slate-200 text-slate-700">
-                              <Users className="mr-1 h-3 w-3" />
-                              {roleLabel(member.role)}
+                              {roleLabel(item.role)}
                             </Badge>
-
-                            <Badge variant="outline" className={statusTone(member.status)}>
-                              {member.status || "active"}
+                            <Badge variant="outline" className={statusTone(item.status)}>
+                              {item.status || "active"}
                             </Badge>
-
                             {manager ? (
                               <Badge variant="outline" className="border-slate-200 text-slate-700">
                                 Manager: {manager.full_name || manager.email}
@@ -319,41 +317,41 @@ export default function UserManagement() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button
-                          variant="outline"
-                          onClick={() =>
-                            setEditing({
-                              id: member.id,
-                              full_name: member.full_name || "",
-                              role: member.role || "employee",
-                              status: member.status || "active",
-                              manager_id: member.manager_id || "",
-                              email: member.email || "",
-                            })
-                          }
-                          className="w-full sm:w-auto"
-                        >
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Edit
-                        </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {item.status === "invited" ? (
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              resendInviteMutation.mutate({
+                                email: item.email,
+                                full_name: item.full_name,
+                                role: item.role,
+                                status: item.status,
+                                manager_id: item.manager_id || null,
+                              })
+                            }
+                            disabled={resendInviteMutation.isPending}
+                          >
+                            <RefreshCcw className="mr-2 h-4 w-4" />
+                            Resend Invite
+                          </Button>
+                        ) : null}
 
                         <Button
                           variant="outline"
                           onClick={() =>
-                            resendInviteMutation.mutate({
-                              email: member.email,
-                              full_name: member.full_name || "",
-                              role: member.role || "employee",
-                              status: member.status || "active",
-                              manager_id: member.manager_id || null,
+                            setEditing({
+                              id: item.id,
+                              email: item.email || "",
+                              full_name: item.full_name || "",
+                              role: item.role || "employee",
+                              status: item.status || "active",
+                              manager_id: item.manager_id || "",
                             })
                           }
-                          disabled={resendInviteMutation.isPending}
-                          className="w-full sm:w-auto"
                         >
-                          <RefreshCcw className="mr-2 h-4 w-4" />
-                          Resend Invite
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
                         </Button>
                       </div>
                     </div>
@@ -394,7 +392,8 @@ export default function UserManagement() {
                 onChange={(e) =>
                   setInviteForm((prev) => ({ ...prev, full_name: e.target.value }))
                 }
-                placeholder="Enter full name"
+                placeholder="Full name"
+                required
               />
             </div>
 
@@ -443,11 +442,11 @@ export default function UserManagement() {
             <div className="space-y-2">
               <Label>Manager</Label>
               <Select
-                value={inviteForm.manager_id || "__none__"}
+                value={inviteForm.manager_id || "none"}
                 onValueChange={(value) =>
                   setInviteForm((prev) => ({
                     ...prev,
-                    manager_id: value === "__none__" ? "" : value,
+                    manager_id: value === "none" ? "" : value,
                   }))
                 }
               >
@@ -455,7 +454,7 @@ export default function UserManagement() {
                   <SelectValue placeholder="Select manager" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">No Manager</SelectItem>
+                  <SelectItem value="none">No Manager</SelectItem>
                   {managers.map((manager) => (
                     <SelectItem key={manager.id} value={manager.id}>
                       {manager.full_name || manager.email}
@@ -465,13 +464,21 @@ export default function UserManagement() {
               </Select>
             </div>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              This invite will send the user to:
-              <div className="mt-1 break-all font-medium">{RESET_PASSWORD_URL}</div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              <div className="flex items-start gap-2">
+                <Mail className="mt-0.5 h-4 w-4 text-slate-500" />
+                <p>
+                  The user will receive an email invitation with a password setup link.
+                </p>
+              </div>
             </div>
 
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setInviteOpen(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={inviteMutation.isPending}>
@@ -492,7 +499,7 @@ export default function UserManagement() {
             <form onSubmit={submitEdit} className="space-y-4">
               <div className="space-y-2">
                 <Label>Email</Label>
-                <Input value={editing.email || ""} disabled />
+                <Input value={editing.email} disabled />
               </div>
 
               <div className="space-y-2">
@@ -503,7 +510,7 @@ export default function UserManagement() {
                   onChange={(e) =>
                     setEditing((prev) => ({ ...prev, full_name: e.target.value }))
                   }
-                  placeholder="Enter full name"
+                  placeholder="Full name"
                 />
               </div>
 
@@ -552,11 +559,11 @@ export default function UserManagement() {
               <div className="space-y-2">
                 <Label>Manager</Label>
                 <Select
-                  value={editing.manager_id || "__none__"}
+                  value={editing.manager_id || "none"}
                   onValueChange={(value) =>
                     setEditing((prev) => ({
                       ...prev,
-                      manager_id: value === "__none__" ? "" : value,
+                      manager_id: value === "none" ? "" : value,
                     }))
                   }
                 >
@@ -564,20 +571,22 @@ export default function UserManagement() {
                     <SelectValue placeholder="Select manager" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">No Manager</SelectItem>
-                    {managers
-                      .filter((manager) => manager.id !== editing.id)
-                      .map((manager) => (
-                        <SelectItem key={manager.id} value={manager.id}>
-                          {manager.full_name || manager.email}
-                        </SelectItem>
-                      ))}
+                    <SelectItem value="none">No Manager</SelectItem>
+                    {managers.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.full_name || manager.email}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <DialogFooter className="pt-2">
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditing(null)}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={updateMutation.isPending}>

@@ -1,270 +1,76 @@
 import React, { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabaseClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, Eye } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
-import { getProfileOrThrow } from "@/lib/profile";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canEdit } from "@/lib/permissions";
+import AppLayout from "@/components/layout/AppLayout";
 import RecordFormModal from "@/components/shared/RecordFormModal";
-import AttachmentUploader from "@/components/shared/AttachmentUploader";
-import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useModuleColumns } from "@/hooks/useModuleColumns";
+import { listModuleRows } from "@/lib/supabaseCrud";
+import { createAuditedModuleRow, updateAuditedModuleRow, deleteAuditedModuleRow } from "@/lib/auditedCrud";
 
-async function listJobs(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
+function makeInitialForm(formColumns, row = null) {
+  const next = {};
+  for (const field of formColumns || []) next[field.field_key] = row?.[field.field_key] ?? "";
+  return next;
 }
 
 export default function Jobs() {
   const { authUser } = useAuth();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [attachmentRow, setAttachmentRow] = useState(null);
   const [form, setForm] = useState({});
-  const { tableColumns, formColumns } = useModuleColumns("jobs");
+  const [viewOpen, setViewOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
+  const { tableColumns = [], formColumns = [] } = useModuleColumns("jobs");
 
-  const { data: jobs = [], isLoading, error } = useQuery({
+  const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["jobs", authUser?.id],
-    queryFn: () => listJobs(authUser),
+    queryFn: () => listModuleRows({ table: "jobs", module: "jobs", currentUser: authUser }),
     enabled: !!authUser?.id,
   });
 
   const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
+  const editable = canEdit(user, "jobs");
 
   const createMutation = useMutation({
-    mutationFn: async (payload) => {
-      const profile = await getProfileOrThrow(authUser.id);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("jobs")
-        .insert({
-          ...cleanPayload,
-          organization_id: profile.organization_id,
-          created_by: authUser.id,
-          updated_by: authUser.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
+    mutationFn: (payload) => createAuditedModuleRow({ table: "jobs", module: "jobs", payload, currentUser: authUser, allowedKeys }),
+    onSuccess: async () => { toast.success("Job created"); await queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); },
+    onError: (err) => toast.error(err?.message || "Failed to create job"),
   });
-
   const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("jobs")
-        .update({
-          ...cleanPayload,
-          updated_by: authUser.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
+    mutationFn: ({ id, payload }) => updateAuditedModuleRow({ table: "jobs", module: "jobs", id, payload, currentUser: authUser, allowedKeys }),
+    onSuccess: async () => { toast.success("Job updated"); await queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); },
+    onError: (err) => toast.error(err?.message || "Failed to update job"),
   });
-
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const { error } = await supabase.from("jobs").delete().eq("id", id);
-      if (error) throw error;
-      return true;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] });
-    },
+    mutationFn: (id) => deleteAuditedModuleRow({ table: "jobs", module: "jobs", id, currentUser: authUser }),
+    onSuccess: async () => { toast.success("Job deleted"); await queryClient.invalidateQueries({ queryKey: ["jobs", authUser?.id] }); },
+    onError: (err) => toast.error(err?.message || "Failed to delete job"),
   });
 
-  const openAddModal = () => {
-    setForm({});
-    setEditingId(null);
-    setOpen(true);
-  };
-
-  const openEditModal = (job) => {
-    setForm(job);
-    setEditingId(job.id);
-    setOpen(true);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const renderCellValue = (job, fieldKey) => {
-    const value = job[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
+  const handleOpenAdd = () => { setEditingId(null); setForm(makeInitialForm(formColumns)); setOpen(true); };
+  const handleOpenEdit = (row) => { setEditingId(row.id); setForm(makeInitialForm(formColumns, row)); setOpen(true); };
+  const handleView = (row) => { setSelectedRow(row); setViewOpen(true); };
+  const handleSubmit = (e) => { e.preventDefault(); editingId ? updateMutation.mutate({ id: editingId, payload: form }) : createMutation.mutate(form); };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Jobs</h1>
-          <p className="text-muted-foreground">Manage shared job records for your organization.</p>
-        </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Job
-        </button>
-      </div>
-
-      <div className="rounded-2xl border overflow-hidden bg-card">
-        {isLoading ? (
-          <div className="p-6">Loading jobs...</div>
-        ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : jobs.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No jobs yet.</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </TableHead>
-                ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobs.map((job) => (
-                <TableRow key={job.id}>
-                  {tableColumns.map((col) => (
-                    <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(job, col.field_key)}
-                    </TableCell>
-                  ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2 flex-wrap">
-                      <button
-                        onClick={() => openEditModal(job)}
-                        className="rounded-lg border px-3 py-1.5"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setAttachmentRow(job)}
-                        className="rounded-lg border px-3 py-1.5"
-                      >
-                        Attachments
-                      </button>
-                      <button
-                        onClick={() => {
-                          const confirmed = window.confirm("Are you sure you want to delete this record?");
-                          if (confirmed) {
-                            deleteMutation.mutate(job.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+    <AppLayout heroRight={editable ? <Button onClick={handleOpenAdd} className="rounded-xl"><Plus className="mr-2 h-4 w-4" />Add Job</Button> : null}>
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {userLoading || isLoading ? <div className="p-6 text-sm text-slate-500">Loading jobs...</div> : error ? <div className="p-6 text-sm text-red-600">Failed to load jobs.</div> : rows.length === 0 ? <div className="p-6 text-sm text-slate-500">No jobs found.</div> : (
+          <Table><TableHeader><TableRow>{tableColumns.map((c) => <TableHead key={c.field_key}>{c.field_label}</TableHead>)}<TableHead className="w-[180px]">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}>{tableColumns.map((c) => <TableCell key={c.field_key}>{String(row?.[c.field_key] ?? "—")}</TableCell>)}<TableCell><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => handleView(row)}><Eye className="h-4 w-4" /></Button>{editable ? <><Button variant="outline" size="sm" onClick={() => handleOpenEdit(row)}><Pencil className="h-4 w-4" /></Button><Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(row.id)} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></Button></> : null}</div></TableCell></TableRow>)}</TableBody></Table>
         )}
       </div>
-
-      <RecordFormModal
-        open={open}
-        onOpenChange={setOpen}
-        title={editingId ? "Edit Job" : "Add Job"}
-      >
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div
-              key={field.field_key}
-              className={field.field_type === "textarea" ? "md:col-span-2" : ""}
-            >
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) =>
-                  setForm((prev) => ({ ...prev, [key]: value }))
-                }
-              />
-            </div>
-          ))}
-
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg border px-4 py-2"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 text-white px-4 py-2"
-            >
-              {editingId ? "Update Job" : "Save Job"}
-            </button>
-          </div>
-        </form>
-      </RecordFormModal>
-
-      <Dialog open={!!attachmentRow} onOpenChange={(value) => !value && setAttachmentRow(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Job Attachments</DialogTitle>
-          </DialogHeader>
-          {attachmentRow && (
-            <AttachmentUploader module="jobs" recordId={attachmentRow.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Job" : "Add Job"}><form onSubmit={handleSubmit} className="space-y-6"><div className="grid gap-4 md:grid-cols-2">{formColumns.map((field) => <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}><label className="mb-1 block text-sm">{field.field_label}{field.required ? <span className="ml-1 text-red-500">*</span> : null}</label><DynamicField field={field} value={form[field.field_key]} onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} /></div>)}</div><div className="flex justify-end gap-3 pt-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">{editingId ? "Update Job" : "Save Job"}</Button></div></form></RecordFormModal>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Job Details</DialogTitle></DialogHeader>{selectedRow ? <div className="grid gap-4 md:grid-cols-2">{tableColumns.map((c) => <div key={c.field_key} className="rounded-xl border border-slate-200 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{c.field_label}</div><div className="mt-2 text-sm text-slate-900">{String(selectedRow?.[c.field_key] ?? "—")}</div></div>)}</div> : null}</DialogContent></Dialog>
+    </AppLayout>
   );
 }

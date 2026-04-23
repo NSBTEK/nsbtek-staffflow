@@ -1,2 +1,23 @@
 [functions.invite-user]
 verify_jwt = false
+
+[functions.document-ingestions]
+verify_jwt = false
+
+[functions.ai-assistant]
+verify_jwt = false
+
+[functions.payroll-sync]
+verify_jwt = false
+
+[functions.integration-proxy]
+verify_jwt = false
+
+[functions.parse-document]
+verify_jwt = false
+
+[functions.psend-notification-email]
+verify_jwt = false
+
+[functions.integration-webhook]
+verify_jwt = false

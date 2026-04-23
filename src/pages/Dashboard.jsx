@@ -31,10 +31,14 @@ import {
   EyeOff,
   GripVertical,
 } from "lucide-react";
+
+import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/lib/AuthContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { listDashboardData } from "@/lib/dashboardScope";
 import { supabase } from "@/lib/supabaseClient";
 import { getProfileOrThrow } from "@/lib/profile";
+import { useRealtimeInvalidate } from "@/hooks/useRealtimeInvalidate";
 
 const PIE_COLORS = ["#2563eb", "#0ea5e9", "#14b8a6", "#8b5cf6", "#f59e0b", "#ef4444"];
 
@@ -43,7 +47,7 @@ function DashboardCard({ title, subtitle, children }) {
     <div className="rounded-2xl border bg-card p-5 shadow-sm">
       <div className="mb-4">
         <h3 className="text-base font-semibold">{title}</h3>
-        {subtitle ? <p className="text-sm text-muted-foreground mt-1">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       {children}
     </div>
@@ -70,7 +74,7 @@ function KPIBox({ label, value, icon: Icon, subtitle, trend }) {
 
 function ChartRenderer({ type, data }) {
   if (!data?.length) {
-    return <div className="h-[280px] grid place-items-center text-sm text-slate-500">No data available</div>;
+    return <div className="grid h-[280px] place-items-center text-sm text-slate-500">No data available</div>;
   }
 
   if (type === "pie") {
@@ -216,7 +220,9 @@ async function saveDashboardPreferences(currentUser, widgets) {
 
 export default function Dashboard() {
   const { authUser } = useAuth();
+  const { user } = useCurrentUser();
   const queryClient = useQueryClient();
+
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [widgetOrder, setWidgetOrder] = useState([]);
   const [hiddenWidgets, setHiddenWidgets] = useState([]);
@@ -226,7 +232,35 @@ export default function Dashboard() {
   const availableWidgets = useMemo(() => getAvailableWidgets(), []);
   const defaultOrder = useMemo(() => availableWidgets.map((w) => w.id), [availableWidgets]);
 
-  const { data: dashboardData, isLoading, error } = useQuery({
+  useRealtimeInvalidate({
+    enabled: !!authUser?.id && !!user?.organization_id,
+    channelName: "rt-dashboard-jobs",
+    table: "jobs",
+    filter: `organization_id=eq.${user?.organization_id}`,
+    queryKeys: [["dashboard-data", authUser?.id]],
+  });
+
+  useRealtimeInvalidate({
+    enabled: !!authUser?.id && !!user?.organization_id,
+    channelName: "rt-dashboard-candidates",
+    table: "candidates",
+    filter: `organization_id=eq.${user?.organization_id}`,
+    queryKeys: [["dashboard-data", authUser?.id]],
+  });
+
+  useRealtimeInvalidate({
+    enabled: !!authUser?.id && !!user?.organization_id,
+    channelName: "rt-dashboard-submissions",
+    table: "submissions",
+    filter: `organization_id=eq.${user?.organization_id}`,
+    queryKeys: [["dashboard-data", authUser?.id]],
+  });
+
+  const {
+    data: dashboardData,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["dashboard-data", authUser?.id],
     queryFn: () => listDashboardData(authUser),
     enabled: !!authUser?.id,
@@ -252,14 +286,22 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!authUser?.id || prefLoaded) return;
+
     const validIds = availableWidgets.map((w) => w.id);
 
     if (prefs?.widgets) {
-      const savedOrder = Array.isArray(prefs.widgets.order) ? prefs.widgets.order : defaultOrder;
-      const savedHidden = Array.isArray(prefs.widgets.hidden) ? prefs.widgets.hidden : [];
+      const savedOrder = Array.isArray(prefs.widgets.order)
+        ? prefs.widgets.order
+        : defaultOrder;
+      const savedHidden = Array.isArray(prefs.widgets.hidden)
+        ? prefs.widgets.hidden
+        : [];
       const savedChartTypes = prefs.widgets.chartTypes || {};
 
-      setWidgetOrder(savedOrder.filter((id) => validIds.includes(id)));
+      const finalOrder = savedOrder.filter((id) => validIds.includes(id));
+      const missingIds = validIds.filter((id) => !finalOrder.includes(id));
+
+      setWidgetOrder([...finalOrder, ...missingIds]);
       setHiddenWidgets(savedHidden.filter((id) => validIds.includes(id)));
       setChartTypes(savedChartTypes);
       setPrefLoaded(true);
@@ -292,97 +334,195 @@ export default function Dashboard() {
       totalContacts: contacts.length,
       totalSubmissions: submissions.length,
       scheduledInterviews: interviews.filter((i) =>
-        ["scheduled", "pending"].includes(String(i.status || "").toLowerCase())
-      ).length,
+        ["scheduled", "pending"].includes(String(i.status || "").toLowerCase()))
+        .length,
       totalPlacements: placements.length,
-      pendingTimesheets: timesheets.filter((t) => String(t.status || "").toLowerCase() === "submitted").length,
+      pendingTimesheets: timesheets.filter(
+        (t) => String(t.status || "").toLowerCase() === "submitted"
+      ).length,
       totalExpenses: sumCurrency(expenses, "amount"),
       pendingActivities: activities.filter((a) =>
-        ["open", "pending"].includes(String(a.status || "").toLowerCase())
-      ).length,
+        ["open", "pending"].includes(String(a.status || "").toLowerCase()))
+        .length,
       totalUsers: users.length,
     };
-  }, [jobs, candidates, clients, contacts, submissions, interviews, placements, timesheets, expenses, activities, users]);
+  }, [
+    jobs,
+    candidates,
+    clients,
+    contacts,
+    submissions,
+    interviews,
+    placements,
+    timesheets,
+    expenses,
+    activities,
+    users,
+  ]);
 
-  const widgetMap = useMemo(() => ({
-    stat_jobs: {
-      render: () => <KPIBox label="Open Jobs" value={stats.openJobs} icon={Briefcase} subtitle="Active hiring demand" trend={`${jobs.length} total jobs`} />,
-    },
-    stat_candidates: {
-      render: () => <KPIBox label="Candidates" value={stats.totalCandidates} icon={Users} subtitle="Talent pool size" trend="Live from ATS" />,
-    },
-    stat_clients: {
-      render: () => <KPIBox label="Active Clients" value={stats.activeClients} icon={Building2} subtitle="Current client base" />,
-    },
-    stat_contacts: {
-      render: () => <KPIBox label="Contacts" value={stats.totalContacts} icon={UserRound} subtitle="Client relationships" />,
-    },
-    stat_submissions: {
-      render: () => <KPIBox label="Submissions" value={stats.totalSubmissions} icon={Send} subtitle="Pipeline movement" />,
-    },
-    stat_interviews: {
-      render: () => <KPIBox label="Interviews" value={stats.scheduledInterviews} icon={CalendarClock} subtitle="Upcoming and pending" />,
-    },
-    stat_placements: {
-      render: () => <KPIBox label="Placements" value={stats.totalPlacements} icon={BadgeCheck} subtitle="Successful hires" />,
-    },
-    stat_timesheets: {
-      render: () => <KPIBox label="Timesheets Pending" value={stats.pendingTimesheets} icon={Clock3} subtitle="Awaiting approval" />,
-    },
-    stat_expenses: {
-      render: () => <KPIBox label="Expenses" value={`$${stats.totalExpenses.toLocaleString()}`} icon={Receipt} subtitle="Tracked costs" />,
-    },
-    stat_activities: {
-      render: () => <KPIBox label="Pending Activities" value={stats.pendingActivities} icon={Activity} subtitle="Follow-ups and tasks" />,
-    },
-    stat_users: {
-      render: () => <KPIBox label="Users" value={stats.totalUsers} icon={Sparkles} subtitle="Organization seats" />,
-    },
-    chart_pipeline: {
-      render: () => (
-        <DashboardCard title="Submission Pipeline" subtitle="Submission status distribution">
-          <ChartRenderer type={chartTypes.chart_pipeline || "pie"} data={groupByStatus(submissions)} />
-        </DashboardCard>
-      ),
-    },
-    chart_jobs: {
-      render: () => (
-        <DashboardCard title="Jobs by Month" subtitle="Recent trend">
-          <ChartRenderer type={chartTypes.chart_jobs || "area"} data={groupByMonth(jobs)} />
-        </DashboardCard>
-      ),
-    },
-    chart_candidates: {
-      render: () => (
-        <DashboardCard title="Candidates by Month" subtitle="Talent acquisition trend">
-          <ChartRenderer type={chartTypes.chart_candidates || "line"} data={groupByMonth(candidates)} />
-        </DashboardCard>
-      ),
-    },
-    chart_clients: {
-      render: () => (
-        <DashboardCard title="Clients by Status" subtitle="Relationship health">
-          <ChartRenderer type={chartTypes.chart_clients || "pie"} data={groupByStatus(clients)} />
-        </DashboardCard>
-      ),
-    },
-    chart_expenses: {
-      render: () => (
-        <DashboardCard title="Expenses by Month" subtitle="Cost trend">
-          <ChartRenderer type={chartTypes.chart_expenses || "bar"} data={groupByMonth(expenses)} />
-        </DashboardCard>
-      ),
-    },
-  }), [stats, jobs.length, submissions, chartTypes, jobs, candidates, clients, expenses]);
+  const widgetMap = useMemo(
+    () => ({
+      stat_jobs: {
+        render: () => (
+          <KPIBox
+            label="Open Jobs"
+            value={stats.openJobs}
+            icon={Briefcase}
+            subtitle="Active hiring demand"
+            trend={`${jobs.length} total jobs`}
+          />
+        ),
+      },
+      stat_candidates: {
+        render: () => (
+          <KPIBox
+            label="Candidates"
+            value={stats.totalCandidates}
+            icon={Users}
+            subtitle="Talent pool size"
+            trend="Live from ATS"
+          />
+        ),
+      },
+      stat_clients: {
+        render: () => (
+          <KPIBox
+            label="Active Clients"
+            value={stats.activeClients}
+            icon={Building2}
+            subtitle="Current client base"
+          />
+        ),
+      },
+      stat_contacts: {
+        render: () => (
+          <KPIBox
+            label="Contacts"
+            value={stats.totalContacts}
+            icon={UserRound}
+            subtitle="Client relationships"
+          />
+        ),
+      },
+      stat_submissions: {
+        render: () => (
+          <KPIBox
+            label="Submissions"
+            value={stats.totalSubmissions}
+            icon={Send}
+            subtitle="Pipeline movement"
+          />
+        ),
+      },
+      stat_interviews: {
+        render: () => (
+          <KPIBox
+            label="Interviews"
+            value={stats.scheduledInterviews}
+            icon={CalendarClock}
+            subtitle="Upcoming and pending"
+          />
+        ),
+      },
+      stat_placements: {
+        render: () => (
+          <KPIBox
+            label="Placements"
+            value={stats.totalPlacements}
+            icon={BadgeCheck}
+            subtitle="Successful hires"
+          />
+        ),
+      },
+      stat_timesheets: {
+        render: () => (
+          <KPIBox
+            label="Timesheets Pending"
+            value={stats.pendingTimesheets}
+            icon={Clock3}
+            subtitle="Awaiting approval"
+          />
+        ),
+      },
+      stat_expenses: {
+        render: () => (
+          <KPIBox
+            label="Expenses"
+            value={`$${stats.totalExpenses.toLocaleString()}`}
+            icon={Receipt}
+            subtitle="Tracked costs"
+          />
+        ),
+      },
+      stat_activities: {
+        render: () => (
+          <KPIBox
+            label="Pending Activities"
+            value={stats.pendingActivities}
+            icon={Activity}
+            subtitle="Follow-ups and tasks"
+          />
+        ),
+      },
+      stat_users: {
+        render: () => (
+          <KPIBox
+            label="Users"
+            value={stats.totalUsers}
+            icon={Sparkles}
+            subtitle="Organization seats"
+          />
+        ),
+      },
+      chart_pipeline: {
+        render: () => (
+          <DashboardCard title="Submission Pipeline" subtitle="Submission status distribution">
+            <ChartRenderer type={chartTypes.chart_pipeline || "pie"} data={groupByStatus(submissions)} />
+          </DashboardCard>
+        ),
+      },
+      chart_jobs: {
+        render: () => (
+          <DashboardCard title="Jobs by Month" subtitle="Recent trend">
+            <ChartRenderer type={chartTypes.chart_jobs || "area"} data={groupByMonth(jobs)} />
+          </DashboardCard>
+        ),
+      },
+      chart_candidates: {
+        render: () => (
+          <DashboardCard title="Candidates by Month" subtitle="Talent acquisition trend">
+            <ChartRenderer type={chartTypes.chart_candidates || "line"} data={groupByMonth(candidates)} />
+          </DashboardCard>
+        ),
+      },
+      chart_clients: {
+        render: () => (
+          <DashboardCard title="Clients by Status" subtitle="Relationship health">
+            <ChartRenderer type={chartTypes.chart_clients || "pie"} data={groupByStatus(clients)} />
+          </DashboardCard>
+        ),
+      },
+      chart_expenses: {
+        render: () => (
+          <DashboardCard title="Expenses by Month" subtitle="Cost trend">
+            <ChartRenderer type={chartTypes.chart_expenses || "bar"} data={groupByMonth(expenses)} />
+          </DashboardCard>
+        ),
+      },
+    }),
+    [stats, jobs.length, submissions, chartTypes, jobs, candidates, clients, expenses]
+  );
 
   const orderedVisibleWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
 
   const moveWidget = (id, direction) => {
     const index = widgetOrder.indexOf(id);
     if (index < 0) return;
+
     const next = [...widgetOrder];
     const target = direction === "up" ? index - 1 : index + 1;
     if (target < 0 || target >= next.length) return;
+
     [next[index], next[target]] = [next[target], next[index]];
     setWidgetOrder(next);
     saveMutation.mutate({ order: next, hidden: hiddenWidgets });
@@ -392,6 +532,7 @@ export default function Dashboard() {
     const nextHidden = hiddenWidgets.includes(id)
       ? hiddenWidgets.filter((x) => x !== id)
       : [...hiddenWidgets, id];
+
     setHiddenWidgets(nextHidden);
     saveMutation.mutate({ order: widgetOrder, hidden: nextHidden });
   };
@@ -403,74 +544,101 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Restored old dashboard-style layout and controls.</p>
+    <AppLayout>
+      <div className="space-y-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">
+              Customizable executive overview with live stats and charts.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setCustomizerOpen((s) => !s)}
+            className="rounded-xl border px-4 py-2 text-sm font-medium"
+          >
+            {customizerOpen ? "Close Customize" : "Customize Dashboard"}
+          </button>
         </div>
-        <button
-          onClick={() => setCustomizerOpen((s) => !s)}
-          className="rounded-xl border px-4 py-2 text-sm font-medium"
-        >
-          {customizerOpen ? "Close Customize" : "Customize Dashboard"}
-        </button>
-      </div>
 
-      {customizerOpen && (
-        <div className="rounded-2xl border bg-card p-5 space-y-4">
-          <h2 className="text-lg font-semibold">Customize widgets</h2>
-          <div className="space-y-3">
-            {widgetOrder.map((id) => {
-              const widget = availableWidgets.find((w) => w.id === id);
-              if (!widget) return null;
-              const hidden = hiddenWidgets.includes(id);
+        {customizerOpen && (
+          <div className="space-y-4 rounded-2xl border bg-card p-5">
+            <h2 className="text-lg font-semibold">Customize widgets</h2>
 
-              return (
-                <div key={id} className="rounded-xl border p-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <GripVertical className="h-4 w-4 text-slate-400" />
-                    <span className={hidden ? "line-through text-slate-400" : ""}>{widget.label}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {id.startsWith("chart_") && (
-                      <select
-                        value={chartTypes[id] || "bar"}
-                        onChange={(e) => setChartType(id, e.target.value)}
+            <div className="space-y-3">
+              {widgetOrder.map((id) => {
+                const widget = availableWidgets.find((w) => w.id === id);
+                if (!widget) return null;
+
+                const hidden = hiddenWidgets.includes(id);
+
+                return (
+                  <div
+                    key={id}
+                    className="flex items-center justify-between gap-3 rounded-xl border p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <GripVertical className="h-4 w-4 text-slate-400" />
+                      <span className={hidden ? "text-slate-400 line-through" : ""}>
+                        {widget.label}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {id.startsWith("chart_") && (
+                        <select
+                          value={chartTypes[id] || "bar"}
+                          onChange={(e) => setChartType(id, e.target.value)}
+                          className="rounded-lg border px-2 py-1 text-sm"
+                        >
+                          <option value="bar">Bar</option>
+                          <option value="line">Line</option>
+                          <option value="area">Area</option>
+                          <option value="pie">Pie</option>
+                        </select>
+                      )}
+
+                      <button
+                        onClick={() => moveWidget(id, "up")}
                         className="rounded-lg border px-2 py-1 text-sm"
                       >
-                        <option value="bar">Bar</option>
-                        <option value="line">Line</option>
-                        <option value="area">Area</option>
-                        <option value="pie">Pie</option>
-                      </select>
-                    )}
-                    <button onClick={() => moveWidget(id, "up")} className="rounded-lg border px-2 py-1 text-sm">↑</button>
-                    <button onClick={() => moveWidget(id, "down")} className="rounded-lg border px-2 py-1 text-sm">↓</button>
-                    <button onClick={() => toggleHidden(id)} className="rounded-lg border px-2 py-1 text-sm">
-                      <EyeOff className="h-4 w-4" />
-                    </button>
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => moveWidget(id, "down")}
+                        className="rounded-lg border px-2 py-1 text-sm"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => toggleHidden(id)}
+                        className="rounded-lg border px-2 py-1 text-sm"
+                      >
+                        <EyeOff className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="rounded-2xl border bg-card p-6">Loading dashboard...</div>
-      ) : error ? (
-        <div className="rounded-2xl border bg-card p-6 text-red-600">{error.message}</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {orderedVisibleWidgets.map((id) => (
-            <div key={id} className={id.startsWith("chart_") ? "md:col-span-2" : ""}>
-              {widgetMap[id]?.render?.()}
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="rounded-2xl border bg-card p-6">Loading dashboard...</div>
+        ) : error ? (
+          <div className="rounded-2xl border bg-card p-6 text-red-600">{error.message}</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {orderedVisibleWidgets.map((id) => (
+              <div key={id} className={id.startsWith("chart_") ? "md:col-span-2" : ""}>
+                {widgetMap[id]?.render?.()}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppLayout>
   );
 }

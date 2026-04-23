@@ -1,58 +1,36 @@
-import {
-  listScopedRows,
-  createScopedRow,
-  updateScopedRow,
-  deleteScopedRow,
-} from "@/lib/scopedQuery";
+import { supabase } from "@/lib/supabaseClient";
+import { unwrap } from "@/api/_helpers";
 
-const TABLE = "jobs";
-
-const ALLOWED_KEYS = [
-  "title",
-  "job_title",
-  "client_name",
-  "description",
-  "status",
-  "location",
-  "employment_type",
-  "department",
-  "priority",
-  "openings",
-  "salary_min",
-  "salary_max",
-  "start_date",
-  "notes",
-];
-
-export function listJobs(currentUser) {
-  return listScopedRows({
-    table: TABLE,
-    currentUser,
-  });
+export async function listJobs() {
+  return unwrap(
+    await supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false })
+  );
 }
 
-export function createJob(payload, currentUser) {
-  return createScopedRow({
-    table: TABLE,
-    currentUser,
-    payload,
-    allowedKeys: ALLOWED_KEYS,
-  });
+export async function createJob(payload) {
+  return unwrap(
+    await supabase
+      .from("jobs")
+      .insert(payload)
+      .select()
+      .single()
+  );
 }
 
-export function updateJob(id, payload, currentUser) {
-  return updateScopedRow({
-    table: TABLE,
-    id,
-    currentUser,
-    payload,
-    allowedKeys: ALLOWED_KEYS,
-  });
+export async function updateJob(id, payload) {
+  return unwrap(
+    await supabase
+      .from("jobs")
+      .update(payload)
+      .eq("id", id)
+      .select()
+      .single()
+  );
 }
 
-export function deleteJob(id) {
-  return deleteScopedRow({
-    table: TABLE,
-    id,
-  });
+export async function deleteJob(id) {
+  return unwrap(await supabase.from("jobs").delete().eq("id", id));
 }

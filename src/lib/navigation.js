@@ -1,0 +1,25 @@
+import { moduleMeta } from "@/lib/moduleMeta";
+
+export const navigation = [
+  moduleMeta.dashboard,
+  moduleMeta.clients,
+  moduleMeta.contacts,
+  moduleMeta.jobs,
+  moduleMeta.candidates,
+  moduleMeta.submissions,
+  moduleMeta.interviews,
+  moduleMeta.placements,
+  moduleMeta.timesheets,
+  moduleMeta.expenses,
+  moduleMeta.contracts,
+  moduleMeta.onboarding,
+  moduleMeta.payroll,
+  moduleMeta.documents,
+  moduleMeta.resume_parser,
+  moduleMeta.users,
+  moduleMeta.role_groups,
+  moduleMeta.integrations,
+  moduleMeta.client_billing,
+  moduleMeta.admin_columns,
+  moduleMeta.request_access,
+];

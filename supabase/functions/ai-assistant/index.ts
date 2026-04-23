@@ -1,67 +1,30 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { requireUser } from "../_shared/auth.ts";
+import { json } from "../_shared/response.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const origin = req.headers.get("origin");
+
+  if (req.method === "OPTIONS") return json({ ok: true }, 200, origin);
 
   try {
-    const { prompt } = await req.json();
+    const { profile, adminClient } = await requireUser(req.headers.get("Authorization"));
+    const body = await req.json();
+    const { prompt } = body;
 
-    if (!prompt || !String(prompt).trim()) {
-      return new Response(JSON.stringify({ error: "Prompt is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!prompt) return json({ error: "prompt is required" }, 400, origin);
 
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openaiApiKey) {
-      return new Response(JSON.stringify({ error: "OPENAI_API_KEY is not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        input: `You are an AI assistant for a staffing, ATS, CRM, HR and workforce platform.\n\nUser request:\n${prompt}`,
-      }),
+    await adminClient.from("audit_logs").insert({
+      organization_id: profile.organization_id,
+      actor_user_id: profile.id,
+      module: "ai",
+      action: "ai_prompt_requested",
+      entity_type: "ai_request",
+      metadata: { prompt_length: String(prompt).length },
     });
 
-    const raw = await response.json();
-
-    if (!response.ok) {
-      return new Response(JSON.stringify({ error: raw.error?.message || "OpenAI request failed", raw }), {
-        status: response.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const reply =
-      raw.output_text ||
-      raw.output?.map((x: any) => x?.content?.map((c: any) => c?.text).join(" ")).join("\n") ||
-      "No response generated.";
-
-    return new Response(JSON.stringify({ reply }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ ok: true, response: "AI response placeholder" }, 200, origin);
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message || "Unexpected error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500, origin);
   }
 });

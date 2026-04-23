@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [authUser, setAuthUser] = useState(null);
@@ -9,19 +9,31 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
     async function init() {
-      const { data, error } = await supabase.auth.getSession();
-      if (!mounted) return;
+      try {
+        const { data, error } = await supabase.auth.getSession();
 
-      if (error) {
-        console.error("getSession error:", error);
+        if (!active) return;
+
+        if (error) {
+          console.error("getSession error:", error);
+        }
+
+        setSession(data?.session ?? null);
+        setAuthUser(data?.session?.user ?? null);
+      } catch (error) {
+        if (active) {
+          console.error("Auth init failed:", error);
+          setSession(null);
+          setAuthUser(null);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-
-      setSession(data?.session ?? null);
-      setAuthUser(data?.session?.user ?? null);
-      setLoading(false);
     }
 
     init();
@@ -29,13 +41,14 @@ export function AuthProvider({ children }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!active) return;
       setSession(newSession ?? null);
       setAuthUser(newSession?.user ?? null);
       setLoading(false);
     });
 
     return () => {
-      mounted = false;
+      active = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -68,6 +81,7 @@ export function AuthProvider({ children }) {
       user: authUser,
       session,
       loading,
+      authLoading: loading,
       login,
       logout,
       isAuthenticated: !!authUser,
@@ -80,8 +94,10 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
+    throw new Error("useAuth must be used within AuthProvider");
   }
+
   return context;
 }

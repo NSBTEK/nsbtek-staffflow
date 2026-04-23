@@ -1,190 +1,124 @@
 import React, { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Upload, CheckCircle } from "lucide-react";
-import { toast } from "sonner";
+import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/lib/AuthContext";
-import { createModuleRow } from "@/lib/supabaseCrud";
-import { uploadDocumentToParser, mapParsedResumeToCandidate } from "@/lib/parsing";
-
-function mapParsedDocumentToJob(parsed) {
-  return {
-    title: parsed.job_title || parsed.title || "",
-    location: parsed.location || "",
-    description: parsed.description || parsed.summary || "",
-    skills_required: Array.isArray(parsed.skills) ? parsed.skills.join(", ") : parsed.skills || "",
-    status: "open",
-    source: "resume_parser",
-  };
-}
+import {
+  uploadDocumentForParsing,
+  runDocumentParse,
+} from "@/lib/documentIngestion";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export default function ResumeParser() {
-  const queryClient = useQueryClient();
   const { authUser } = useAuth();
-  const [target, setTarget] = useState("candidate");
   const [file, setFile] = useState(null);
-  const [parsed, setParsed] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [result, setResult] = useState(null);
 
-  const parseMutation = useMutation({
-    mutationFn: async () => {
-      if (!file) throw new Error("Please choose a file first");
-      return uploadDocumentToParser(file);
-    },
-    onSuccess: (result) => {
-      setParsed(result);
-      toast.success("Document parsed");
-    },
-    onError: (error) => toast.error(error.message || "Failed to parse document"),
-  });
+  const isBusy = isUploading || isParsing;
 
-  const saveCandidateMutation = useMutation({
-    mutationFn: (payload) =>
-      createModuleRow({
-        table: "candidates",
-        payload,
+  const handleParse = async () => {
+    if (!authUser?.id) {
+      toast.error("You must be logged in");
+      return;
+    }
+
+    if (!file) {
+      toast.error("Please choose a resume file first");
+      return;
+    }
+
+    if (isBusy) return;
+
+    try {
+      setResult(null);
+      setIsUploading(true);
+
+      const ingestion = await uploadDocumentForParsing({
         currentUser: authUser,
-        allowedKeys: [
-          "first_name",
-          "last_name",
-          "email",
-          "phone",
-          "status",
-          "current_title",
-          "location",
-          "experience_years",
-          "skills",
-          "summary",
-          "current_company",
-          "source",
-        ],
-      }),
-    onSuccess: async () => {
-      toast.success("Candidate created");
-      await queryClient.invalidateQueries({ queryKey: ["candidates"] });
-    },
-    onError: (error) => toast.error(error.message || "Failed to save candidate"),
-  });
+        file,
+        moduleTarget: "candidates",
+      });
 
-  const saveJobMutation = useMutation({
-    mutationFn: (payload) =>
-      createModuleRow({
-        table: "jobs",
-        payload,
-        currentUser: authUser,
-        allowedKeys: [
-          "title",
-          "location",
-          "description",
-          "skills_required",
-          "status",
-          "source",
-        ],
-      }),
-    onSuccess: async () => {
-      toast.success("Job created");
-      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-    },
-    onError: (error) => toast.error(error.message || "Failed to save job"),
-  });
+      setIsUploading(false);
+      setIsParsing(true);
 
-  const normalizedCandidate = parsed ? mapParsedResumeToCandidate(parsed) : null;
-  const normalizedJob = parsed ? mapParsedDocumentToJob(parsed) : null;
+      const parsed = await runDocumentParse(ingestion.id);
+      setResult(parsed);
 
-  const handleSave = () => {
-    if (!parsed) return;
-    if (target === "candidate") {
-      saveCandidateMutation.mutate({ ...normalizedCandidate, source: "resume_parser" });
-    } else {
-      saveJobMutation.mutate({ ...normalizedJob, source: "resume_parser" });
+      if (parsed?.status === "queued") {
+        toast.warning(
+          parsed?.message ||
+            "Resume parser is temporarily rate-limited. Your file was uploaded and queued."
+        );
+      } else {
+        toast.success("Resume parsed successfully");
+      }
+    } catch (error) {
+      console.error("Resume parse failed:", error);
+
+      const message =
+        error?.message ||
+        "Resume parsing failed. Please wait a moment and try again.";
+
+      setResult({
+        success: false,
+        status: "failed",
+        message,
+      });
+
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+      setIsParsing(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Resume Parser</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Upload a resume or document, parse it, and save the result into Candidates or Jobs.
-        </p>
-      </div>
+    <AppLayout>
+      <div className="space-y-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Resume Parser</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Upload a resume and parse it into structured candidate information.
+          </p>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Upload document</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Target Module</Label>
-              <select
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className="mt-1 w-full rounded-lg border px-3 py-2"
-              >
-                <option value="candidate">Candidates</option>
-                <option value="job">Jobs</option>
-              </select>
-            </div>
+          <div className="mt-6 space-y-4">
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              disabled={isBusy}
+              className="block w-full text-sm"
+            />
 
-            <div>
-              <Label>Document</Label>
-              <Input
-                type="file"
-                accept=".pdf,.doc,.docx,.txt,.rtf"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-              />
-              {file ? <div className="mt-2 text-sm text-slate-600">Selected: {file.name}</div> : null}
-            </div>
-
-            <Button onClick={() => parseMutation.mutate()} disabled={!file || parseMutation.isPending}>
-              {parseMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4 mr-2" />
-              )}
-              Parse document
+            <Button onClick={handleParse} disabled={!file || isBusy}>
+              {isUploading
+                ? "Uploading..."
+                : isParsing
+                ? "Parsing..."
+                : "Parse Document"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Parsed output</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!parsed ? (
-              <div className="text-sm text-muted-foreground">No parsed result yet.</div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <Badge>Target: {target === "candidate" ? "Candidates" : "Jobs"}</Badge>
-                  <Badge>Parsed</Badge>
-                </div>
+        {result ? (
+  <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h3 className="text-base font-semibold text-slate-900">Parser Status</h3>
 
-                <pre className="rounded-xl bg-slate-50 border p-4 text-xs overflow-auto">
-                  {JSON.stringify(target === "candidate" ? normalizedCandidate : normalizedJob, null, 2)}
-                </pre>
-
-                <Button
-                  onClick={handleSave}
-                  disabled={saveCandidateMutation.isPending || saveJobMutation.isPending}
-                >
-                  {(saveCandidateMutation.isPending || saveJobMutation.isPending) ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                  )}
-                  Save to {target === "candidate" ? "Candidates" : "Jobs"}
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+    {result.status === "queued" || result.status === "queued_or_failed" ? (
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        Resume was uploaded successfully, but parsing is unavailable right now because the backend AI API quota is exhausted.
+        Add API billing or replace the API key used by the Supabase function to enable parsing.
       </div>
-    </div>
+    ) : (
+      <pre className="mt-4 overflow-auto rounded-2xl bg-slate-50 p-4 text-xs text-slate-700">
+        {JSON.stringify(result, null, 2)}
+      </pre>
+    )}
+  </div>
+) : null}
+      </div>
+    </AppLayout>
   );
 }

@@ -1,231 +1,64 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, Eye } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canEdit } from "@/lib/permissions";
+import AppLayout from "@/components/layout/AppLayout";
 import RecordFormModal from "@/components/shared/RecordFormModal";
-import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
+import SearchableEntitySelect from "@/components/shared/SearchableEntitySelect";
+import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useModuleColumns } from "@/hooks/useModuleColumns";
+import { listModuleRows } from "@/lib/supabaseCrud";
+import { createAuditedModuleRow, updateAuditedModuleRow, deleteAuditedModuleRow } from "@/lib/auditedCrud";
+import { listCandidateOptions, listJobOptions, listClientOptions, listOrganizationUserOptions } from "@/lib/recruitmentOptions";
 
-async function listInterviews(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const { data, error } = await supabase
-    .from("interviews")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
-}
+const HIDDEN_DUPLICATE_FIELDS = ["candidate_id","candidate_name","job_id","job_title","client_id","client_name","interviewer_id","interviewer_name"];
+function makeInitialForm(formColumns, row = null) { const next = {}; for (const field of formColumns || []) next[field.field_key] = row?.[field.field_key] ?? ""; return next; }
 
 export default function Interviews() {
   const { authUser } = useAuth();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
-  const { tableColumns, formColumns } = useModuleColumns("interviews");
+  const [viewOpen, setViewOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
+  const { tableColumns = [], formColumns = [] } = useModuleColumns("interviews");
 
-  const { data: interviews = [], isLoading, error } = useQuery({
-    queryKey: ["interviews", authUser?.id],
-    queryFn: () => listInterviews(authUser),
-    enabled: !!authUser?.id,
-  });
+  const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["interviews", authUser?.id], queryFn: () => listModuleRows({ table: "interviews", module: "interviews", currentUser: authUser }), enabled: !!authUser?.id });
+  const { data: candidateOptions = [] } = useQuery({ queryKey: ["candidate-options", authUser?.id], queryFn: () => listCandidateOptions(authUser), enabled: !!authUser?.id });
+  const { data: jobOptions = [] } = useQuery({ queryKey: ["job-options", authUser?.id], queryFn: () => listJobOptions(authUser), enabled: !!authUser?.id });
+  const { data: clientOptions = [] } = useQuery({ queryKey: ["client-options", authUser?.id], queryFn: () => listClientOptions(authUser), enabled: !!authUser?.id });
+  const { data: userOptions = [] } = useQuery({ queryKey: ["organization-user-options", authUser?.id], queryFn: () => listOrganizationUserOptions(authUser), enabled: !!authUser?.id });
 
-  const createMutation = useMutation({
-    mutationFn: async (payload) => {
-      const profile = await getProfileOrThrow(authUser.id);
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
+  const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
+  const visibleFormColumns = useMemo(() => formColumns.filter((f) => !HIDDEN_DUPLICATE_FIELDS.includes(f.field_key)), [formColumns]);
+  const editable = canEdit(user, "interviews");
 
-      const { data, error } = await supabase
-        .from("interviews")
-        .insert({
-          ...cleanPayload,
-          organization_id: profile.organization_id,
-          created_by: authUser.id,
-          updated_by: authUser.id,
-        })
-        .select()
-        .single();
+  const createMutation = useMutation({ mutationFn: (payload) => createAuditedModuleRow({ table: "interviews", module: "interviews", payload, currentUser: authUser, allowedKeys }), onSuccess: async () => { toast.success("Interview created"); await queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); }, onError: (err) => toast.error(err?.message || "Failed to create interview") });
+  const updateMutation = useMutation({ mutationFn: ({ id, payload }) => updateAuditedModuleRow({ table: "interviews", module: "interviews", id, payload, currentUser: authUser, allowedKeys }), onSuccess: async () => { toast.success("Interview updated"); await queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); }, onError: (err) => toast.error(err?.message || "Failed to update interview") });
+  const deleteMutation = useMutation({ mutationFn: (id) => deleteAuditedModuleRow({ table: "interviews", module: "interviews", id, currentUser: authUser }), onSuccess: async () => { toast.success("Interview deleted"); await queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] }); }, onError: (err) => toast.error(err?.message || "Failed to delete interview") });
 
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("interviews")
-        .update({
-          ...cleanPayload,
-          updated_by: authUser.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const { error } = await supabase.from("interviews").delete().eq("id", id);
-      if (error) throw error;
-      return true;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interviews", authUser?.id] });
-    },
-  });
-
-  const openAddModal = () => {
-    setForm({});
-    setEditingId(null);
-    setOpen(true);
-  };
-
-  const openEditModal = (row) => {
-    setForm(row);
-    setEditingId(row.id);
-    setOpen(true);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const renderCellValue = (row, fieldKey) => {
-    const value = row[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
+  const handleOpenAdd = () => { setEditingId(null); setForm(makeInitialForm(formColumns)); setOpen(true); };
+  const handleOpenEdit = (row) => { setEditingId(row.id); setForm(makeInitialForm(formColumns, row)); setOpen(true); };
+  const handleView = (row) => { setSelectedRow(row); setViewOpen(true); };
+  const handleSubmit = (e) => { e.preventDefault(); editingId ? updateMutation.mutate({ id: editingId, payload: form }) : createMutation.mutate(form); };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Interviews</h1>
-          <p className="text-muted-foreground">
-            Manage shared interview records for your organization.
-          </p>
-        </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Interview
-        </button>
-      </div>
-
-      <div className="rounded-2xl border overflow-hidden bg-card">
-        {isLoading ? (
-          <div className="p-6">Loading interviews...</div>
-        ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : interviews.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No interviews yet.</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </TableHead>
-                ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {interviews.map((row) => (
-                <TableRow key={row.id}>
-                  {tableColumns.map((col) => (
-                    <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(row, col.field_key)}
-                    </TableCell>
-                  ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this record?")) {
-                            deleteMutation.mutate(row.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+    <AppLayout heroRight={editable ? <Button onClick={handleOpenAdd} className="rounded-xl"><Plus className="mr-2 h-4 w-4" />Add Interview</Button> : null}>
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {userLoading || isLoading ? <div className="p-6 text-sm text-slate-500">Loading interviews...</div> : error ? <div className="p-6 text-sm text-red-600">Failed to load interviews.</div> : rows.length === 0 ? <div className="p-6 text-sm text-slate-500">No interviews found.</div> : (
+          <Table><TableHeader><TableRow>{tableColumns.map((c) => <TableHead key={c.field_key}>{c.field_label}</TableHead>)}<TableHead className="w-[180px]">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}>{tableColumns.map((c) => <TableCell key={c.field_key}>{String(row?.[c.field_key] ?? "—")}</TableCell>)}<TableCell><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => handleView(row)}><Eye className="h-4 w-4" /></Button>{editable ? <><Button variant="outline" size="sm" onClick={() => handleOpenEdit(row)}><Pencil className="h-4 w-4" /></Button><Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(row.id)} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></Button></> : null}</div></TableCell></TableRow>)}</TableBody></Table>
         )}
       </div>
-
-      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Interview" : "Add Interview"}>
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-              />
-            </div>
-          ))}
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
-              Cancel
-            </button>
-            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
-              {editingId ? "Update Interview" : "Save Interview"}
-            </button>
-          </div>
-        </form>
-      </RecordFormModal>
-    </div>
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Interview" : "Add Interview"}><form onSubmit={handleSubmit} className="space-y-6"><div className="grid gap-4 md:grid-cols-2"><SearchableEntitySelect label="Candidate" value={form.candidate_id} onChange={(value, opt) => setForm((prev) => ({ ...prev, candidate_id: value, candidate_name: opt?.label || "" }))} options={candidateOptions} /><SearchableEntitySelect label="Job" value={form.job_id} onChange={(value, opt) => setForm((prev) => ({ ...prev, job_id: value, job_title: opt?.label || "" }))} options={jobOptions} /><SearchableEntitySelect label="Client" value={form.client_id} onChange={(value, opt) => setForm((prev) => ({ ...prev, client_id: value, client_name: opt?.label || "" }))} options={clientOptions} /><SearchableEntitySelect label="Interviewer" value={form.interviewer_id} onChange={(value, opt) => setForm((prev) => ({ ...prev, interviewer_id: value, interviewer_name: opt?.label || "" }))} options={userOptions} />{visibleFormColumns.map((field) => <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}><label className="mb-1 block text-sm">{field.field_label}{field.required ? <span className="ml-1 text-red-500">*</span> : null}</label><DynamicField field={field} value={form[field.field_key]} onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} /></div>)}</div><div className="flex justify-end gap-3 pt-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">{editingId ? "Update Interview" : "Save Interview"}</Button></div></form></RecordFormModal>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Interview Details</DialogTitle></DialogHeader>{selectedRow ? <div className="grid gap-4 md:grid-cols-2">{tableColumns.map((c) => <div key={c.field_key} className="rounded-xl border border-slate-200 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{c.field_label}</div><div className="mt-2 text-sm text-slate-900">{String(selectedRow?.[c.field_key] ?? "—")}</div></div>)}</div> : null}</DialogContent></Dialog>
+    </AppLayout>
   );
 }

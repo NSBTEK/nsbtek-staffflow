@@ -1,155 +1,153 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, Eye } from "lucide-react";
+import { toast } from "sonner";
+
 import { useAuth } from "@/lib/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canEdit } from "@/lib/permissions";
+
+import AppLayout from "@/components/layout/AppLayout";
 import RecordFormModal from "@/components/shared/RecordFormModal";
-import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
-async function listClients(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-  const { data, error } = await supabase
-    .from("clients")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
+import { useModuleColumns } from "@/hooks/useModuleColumns";
+import { listModuleRows } from "@/lib/supabaseCrud";
+import {
+  createAuditedModuleRow,
+  updateAuditedModuleRow,
+  deleteAuditedModuleRow,
+} from "@/lib/auditedCrud";
 
-  if (error) throw error;
-  return data || [];
-}
-
-async function createClientRecord(payload, currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  const allowedKeys = [
-    "name",
-    "industry",
-    "website",
-    "email",
-    "phone",
-    "status",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("clients")
-    .insert({
-      ...cleanPayload,
-      organization_id: profile.organization_id,
-      created_by: currentUser.id,
-      updated_by: currentUser.id,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function updateClientRecord(id, payload, currentUser) {
-  const allowedKeys = [
-    "name",
-    "industry",
-    "website",
-    "email",
-    "phone",
-    "status",
-    "notes",
-  ];
-
-  const cleanPayload = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-  );
-
-  const { data, error } = await supabase
-    .from("clients")
-    .update({
-      ...cleanPayload,
-      updated_by: currentUser.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function deleteClientRecord(id) {
-  const { error } = await supabase
-    .from("clients")
-    .delete()
-    .eq("id", id);
-
-  if (error) throw error;
-  return true;
+function makeInitialForm(formColumns, row = null) {
+  const next = {};
+  for (const field of formColumns || []) {
+    next[field.field_key] = row?.[field.field_key] ?? "";
+  }
+  return next;
 }
 
 export default function Clients() {
   const { authUser } = useAuth();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const queryClient = useQueryClient();
+
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
-  const { tableColumns, formColumns } = useModuleColumns("clients");
+  const [viewOpen, setViewOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState(null);
 
-  const { data: clients = [], isLoading, error } = useQuery({
+  const { tableColumns = [], formColumns = [] } = useModuleColumns("clients");
+
+  const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["clients", authUser?.id],
-    queryFn: () => listClients(authUser),
+    queryFn: () =>
+      listModuleRows({
+        table: "clients",
+        module: "clients",
+        currentUser: authUser,
+      }),
     enabled: !!authUser?.id,
   });
 
+  const allowedKeys = useMemo(
+    () => formColumns.map((f) => f.field_key),
+    [formColumns]
+  );
+
+  const editable = canEdit(user, "clients");
+
   const createMutation = useMutation({
-    mutationFn: (payload) => createClientRecord(payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
-      resetForm();
+    mutationFn: (payload) =>
+      createAuditedModuleRow({
+        table: "clients",
+        module: "clients",
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Client created");
+      await queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
       setOpen(false);
+      setEditingId(null);
+      setForm({});
     },
+    onError: (err) => toast.error(err?.message || "Failed to create client"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) => updateClientRecord(id, payload, authUser),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
-      resetForm();
+    mutationFn: ({ id, payload }) =>
+      updateAuditedModuleRow({
+        table: "clients",
+        module: "clients",
+        id,
+        payload,
+        currentUser: authUser,
+        allowedKeys,
+      }),
+    onSuccess: async () => {
+      toast.success("Client updated");
+      await queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
       setOpen(false);
+      setEditingId(null);
+      setForm({});
     },
+    onError: (err) => toast.error(err?.message || "Failed to update client"),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteClientRecord,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
+    mutationFn: (id) =>
+      deleteAuditedModuleRow({
+        table: "clients",
+        module: "clients",
+        id,
+        currentUser: authUser,
+      }),
+    onSuccess: async () => {
+      toast.success("Client deleted");
+      await queryClient.invalidateQueries({ queryKey: ["clients", authUser?.id] });
     },
+    onError: (err) => toast.error(err?.message || "Failed to delete client"),
   });
 
-  const resetForm = () => {
-    setForm({});
+  const handleOpenAdd = () => {
     setEditingId(null);
-  };
-
-  const openAddModal = () => {
-    resetForm();
+    setForm(makeInitialForm(formColumns));
     setOpen(true);
   };
 
-  const openEditModal = (client) => {
-    setEditingId(client.id);
-    setForm(client);
+  const handleOpenEdit = (row) => {
+    setEditingId(row.id);
+    setForm(makeInitialForm(formColumns, row));
     setOpen(true);
+  };
+
+  const handleView = (row) => {
+    setSelectedRow(row);
+    setViewOpen(true);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
     if (editingId) {
       updateMutation.mutate({ id: editingId, payload: form });
     } else {
@@ -157,78 +155,71 @@ export default function Clients() {
     }
   };
 
-  const renderCellValue = (client, fieldKey) => {
-    const value = client[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-muted-foreground">
-            Manage shared client records for your organization.
-          </p>
-        </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Client
-        </button>
-      </div>
-
-      <div className="rounded-2xl border overflow-hidden bg-card">
-        {isLoading ? (
-          <div className="p-6">Loading clients...</div>
+    <AppLayout
+      heroRight={
+        editable ? (
+          <Button onClick={handleOpenAdd} className="rounded-xl">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Client
+          </Button>
+        ) : null
+      }
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {userLoading || isLoading ? (
+          <div className="p-6 text-sm text-slate-500">Loading clients...</div>
         ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : clients.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No clients yet.</div>
+          <div className="p-6 text-sm text-red-600">
+            Failed to load clients.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="p-6 text-sm text-slate-500">
+            No clients found.
+          </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
+                {tableColumns.map((column) => (
+                  <TableHead key={column.field_key}>
+                    {column.field_label}
                   </TableHead>
                 ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+                <TableHead className="w-[180px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
-              {clients.map((client) => (
-                <TableRow key={client.id}>
-                  {tableColumns.map((col) => (
-                    <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(client, col.field_key)}
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  {tableColumns.map((column) => (
+                    <TableCell key={column.field_key}>
+                      {String(row?.[column.field_key] ?? "—")}
                     </TableCell>
                   ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEditModal(client)}
-                        className="rounded-lg border px-3 py-1.5"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            "Are you sure you want to delete this record?"
-                          );
-                          if (confirmed) {
-                            deleteMutation.mutate(client.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
+
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleView(row)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+
+                      {editable ? (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenEdit(row)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteMutation.mutate(row.id)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -243,43 +234,64 @@ export default function Clients() {
         onOpenChange={setOpen}
         title={editingId ? "Edit Client" : "Add Client"}
       >
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div
-              key={field.field_key}
-              className={field.field_type === "textarea" ? "md:col-span-2" : ""}
-            >
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) =>
-                  setForm((prev) => ({ ...prev, [key]: value }))
-                }
-              />
-            </div>
-          ))}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            {formColumns.map((field) => (
+              <div
+                key={field.field_key}
+                className={field.field_type === "textarea" ? "md:col-span-2" : ""}
+              >
+                <label className="mb-1 block text-sm">
+                  {field.field_label}
+                  {field.required ? (
+                    <span className="ml-1 text-red-500">*</span>
+                  ) : null}
+                </label>
 
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg border px-4 py-2"
-            >
+                <DynamicField
+                  field={field}
+                  value={form[field.field_key]}
+                  onChange={(key, value) =>
+                    setForm((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 text-white px-4 py-2"
-            >
+            </Button>
+            <Button type="submit">
               {editingId ? "Update Client" : "Save Client"}
-            </button>
+            </Button>
           </div>
         </form>
       </RecordFormModal>
-    </div>
+
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Client Details</DialogTitle>
+          </DialogHeader>
+
+          {selectedRow ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {tableColumns.map((column) => (
+                <div key={column.field_key} className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {column.field_label}
+                  </div>
+                  <div className="mt-2 text-sm text-slate-900">
+                    {String(selectedRow?.[column.field_key] ?? "—")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
   );
 }

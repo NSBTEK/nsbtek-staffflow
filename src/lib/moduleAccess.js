@@ -52,11 +52,50 @@ export function buildScopedWriteQuery(query, user, module, options = {}) {
 
 export function canEditRecord(user, module, record, options = {}) {
   const ownerColumn = options.ownerColumn || "created_by";
+  const orgColumn = options.orgColumn || "organization_id";
 
+  if (!record || !user) return false;
   if (!canEdit(user, module)) return false;
-  if (canViewAll(user, module)) return true;
+  if (record[orgColumn] !== user.organization_id) return false;
+
   if (isOwnOnly(user, module)) {
-    return record?.[ownerColumn] === user?.id;
+    return record[ownerColumn] === user.id;
   }
-  return false;
+
+  return true;
+}
+
+export function canViewRecord(user, module, record, options = {}) {
+  const ownerColumn = options.ownerColumn || "created_by";
+  const orgColumn = options.orgColumn || "organization_id";
+
+  if (!record || !user) return false;
+  if (!canView(user, module)) return false;
+  if (record[orgColumn] !== user.organization_id) return false;
+
+  if (isOwnOnly(user, module)) {
+    return record[ownerColumn] === user.id;
+  }
+
+  return true;
+}
+
+export function scopeRowsForUser(rows, user, module, options = {}) {
+  const ownerColumn = options.ownerColumn || "created_by";
+  const orgColumn = options.orgColumn || "organization_id";
+
+  if (!Array.isArray(rows) || !user) return [];
+  if (!canView(user, module)) return [];
+
+  const sameOrgRows = rows.filter((row) => row?.[orgColumn] === user.organization_id);
+
+  if (canViewAll(user, module)) {
+    return sameOrgRows;
+  }
+
+  if (isOwnOnly(user, module)) {
+    return sameOrgRows.filter((row) => row?.[ownerColumn] === user.id);
+  }
+
+  return sameOrgRows;
 }

@@ -1,218 +1,50 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RecordFormModal from "@/components/shared/RecordFormModal";
+import SearchableEntitySelect from "@/components/shared/SearchableEntitySelect";
+import AppLayout from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { useAuth } from "@/lib/AuthContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { canEdit } from "@/lib/permissions";
-import { listModuleRows, createModuleRow, updateModuleRow, deleteModuleRow } from "@/lib/supabaseCrud";
+import { listOrganizationUserOptions, listClientOptions } from "@/lib/recruitmentOptions";
+import { listWorkforceRows, createWorkforceRow, updateWorkforceRow, deleteWorkforceRow } from "@/lib/workforceCrud";
+import { hasFullWorkforceAccess, hasManagerWorkforceAccess } from "@/lib/workforceAccess";
 import { toast } from "sonner";
+import { Plus, Pencil, Trash2 } from "lucide-react";
+
+const HIDDEN_DUPLICATE_FIELDS = ["employee_id","employee_name","user_id","user_name","client_id","client_name"];
 
 export default function Contracts() {
   const { authUser } = useAuth();
-  const { user, isLoading: userLoading } = useCurrentUser();
+  const { user } = useCurrentUser();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const { tableColumns, formColumns } = useModuleColumns("contracts");
 
-  const { data: rows = [], isLoading, error } = useQuery({
-    queryKey: ["contracts", authUser?.id],
-    queryFn: () =>
-      listModuleRows({
-        table: "contracts",
-        module: "contracts",
-        currentUser: authUser,
-      }),
-    enabled: !!authUser?.id,
-  });
+  const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["contracts", authUser?.id], queryFn: () => listWorkforceRows({ table: "contracts", module: "contracts", currentUser: authUser, employeeColumn: "employee_id" }), enabled: !!authUser?.id });
+  const { data: userOptions = [] } = useQuery({ queryKey: ["organization-user-options", authUser?.id], queryFn: () => listOrganizationUserOptions(authUser), enabled: !!authUser?.id });
+  const { data: clientOptions = [] } = useQuery({ queryKey: ["client-options", authUser?.id], queryFn: () => listClientOptions(authUser), enabled: !!authUser?.id });
+  const visibleFormColumns = useMemo(() => formColumns.filter((field) => !HIDDEN_DUPLICATE_FIELDS.includes(field.field_key)), [formColumns]);
+  const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
+  const canChooseOtherEmployees = hasFullWorkforceAccess(user) || hasManagerWorkforceAccess(user);
 
-  const allowedKeys = formColumns.map((f) => f.field_key);
+  const createMutation = useMutation({ mutationFn: (payload) => createWorkforceRow({ table: "contracts", module: "contracts", payload: { ...payload, employee_id: payload.employee_id || authUser.id }, currentUser: authUser, allowedKeys, employeeColumn: "employee_id" }), onSuccess: async () => { toast.success("Contract created"); await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] }); setForm({}); setEditingId(null); setOpen(false); }, onError: (error) => toast.error(error.message || "Failed to create contract") });
+  const updateMutation = useMutation({ mutationFn: ({ id, payload }) => updateWorkforceRow({ table: "contracts", module: "contracts", id, payload, currentUser: authUser, allowedKeys, employeeColumn: "employee_id" }), onSuccess: async () => { toast.success("Contract updated"); await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] }); setForm({}); setEditingId(null); setOpen(false); }, onError: (error) => toast.error(error.message || "Failed to update contract") });
+  const deleteMutation = useMutation({ mutationFn: (id) => deleteWorkforceRow({ table: "contracts", module: "contracts", id, currentUser: authUser, employeeColumn: "employee_id" }), onSuccess: async () => { toast.success("Contract deleted"); await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] }); }, onError: (error) => toast.error(error.message || "Failed to delete contract") });
 
-  const createMutation = useMutation({
-    mutationFn: (payload) =>
-      createModuleRow({
-        table: "contracts",
-        module: "contracts",
-        payload,
-        currentUser: authUser,
-        allowedKeys,
-      }),
-    onSuccess: async () => {
-      toast.success("Contract created");
-      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-    onError: (error) => toast.error(error.message || "Failed to create contract"),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) =>
-      updateModuleRow({
-        table: "contracts",
-        module: "contracts",
-        id,
-        payload,
-        currentUser: authUser,
-        allowedKeys,
-      }),
-    onSuccess: async () => {
-      toast.success("Contract updated");
-      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-    onError: (error) => toast.error(error.message || "Failed to update contract"),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id) =>
-      deleteModuleRow({
-        table: "contracts",
-        module: "contracts",
-        id,
-        currentUser: authUser,
-      }),
-    onSuccess: async () => {
-      toast.success("Contract deleted");
-      await queryClient.invalidateQueries({ queryKey: ["contracts", authUser?.id] });
-    },
-    onError: (error) => toast.error(error.message || "Failed to delete contract"),
-  });
-
-  const openAddModal = () => {
-    setEditingId(null);
-    setForm({});
-    setOpen(true);
-  };
-
-  const openEditModal = (row) => {
-    setEditingId(row.id);
-    setForm(row);
-    setOpen(true);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const renderCellValue = (row, fieldKey) => {
-    const value = row[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
-
-  if (userLoading) return <div className="p-6">Loading profile...</div>;
-
-  const editable = canEdit(user, "contracts");
+  const handleOpenAdd = () => { setEditingId(null); setForm({}); setOpen(true); };
+  const handleOpenEdit = (row) => { setEditingId(row.id); setForm(row); setOpen(true); };
+  const handleSubmit = (e) => { e.preventDefault(); editingId ? updateMutation.mutate({ id: editingId, payload: form }) : createMutation.mutate(form); };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Contracts</h1>
-          <p className="text-muted-foreground">Manage workforce contracts and agreement records.</p>
-        </div>
-        {editable && (
-          <button
-            onClick={openAddModal}
-            className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-          >
-            + Add Contract
-          </button>
-        )}
-      </div>
-
-      <div className="rounded-2xl border overflow-hidden bg-card">
-        {isLoading ? (
-          <div className="p-6">Loading contracts...</div>
-        ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : rows.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No contract records found.</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </TableHead>
-                ))}
-                {editable && <TableHead className="px-4 py-3 text-right">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  {tableColumns.map((col) => (
-                    <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(row, col.field_key)}
-                    </TableCell>
-                  ))}
-                  {editable && (
-                    <TableCell className="px-4 py-3">
-                      <div className="flex justify-end gap-2 flex-wrap">
-                        <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm("Are you sure you want to delete this record?")) {
-                              deleteMutation.mutate(row.id);
-                            }
-                          }}
-                          className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Contract" : "Add Contract"}>
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-              />
-            </div>
-          ))}
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
-              Cancel
-            </button>
-            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
-              {editingId ? "Update Contract" : "Save Contract"}
-            </button>
-          </div>
-        </form>
-      </RecordFormModal>
-    </div>
+    <AppLayout heroRight={<Button onClick={handleOpenAdd} className="rounded-xl"><Plus className="mr-2 h-4 w-4" />Add Contract</Button>}>
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">{isLoading ? <div className="p-6 text-sm text-slate-500">Loading contracts...</div> : error ? <div className="p-6 text-sm text-red-600">Failed to load contracts.</div> : rows.length === 0 ? <div className="p-6 text-sm text-slate-500">No contracts found.</div> : (<Table><TableHeader><TableRow>{tableColumns.map((c) => <TableHead key={c.field_key}>{c.field_label}</TableHead>)}<TableHead className="w-[140px]">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}>{tableColumns.map((c) => <TableCell key={c.field_key}>{String(row?.[c.field_key] ?? "—")}</TableCell>)}<TableCell><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => handleOpenEdit(row)}><Pencil className="h-4 w-4" /></Button><Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(row.id)} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table>)}</div>
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Contract" : "Add Contract"}><form onSubmit={handleSubmit} className="space-y-6">{canChooseOtherEmployees ? <SearchableEntitySelect label="Employee" value={form.employee_id} onChange={(value, option) => setForm((prev) => ({ ...prev, employee_id: value, employee_name: option?.label || "" }))} options={userOptions} placeholder="Select employee" /> : null}<SearchableEntitySelect label="Client" value={form.client_id} onChange={(value, option) => setForm((prev) => ({ ...prev, client_id: value, client_name: option?.label || "" }))} options={clientOptions} placeholder="Select client" /><div className="grid gap-4 md:grid-cols-2">{visibleFormColumns.map((field) => <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}><label className="mb-1 block text-sm">{field.field_label}{field.required ? <span className="ml-1 text-red-500">*</span> : null}</label><DynamicField field={field} value={form[field.field_key]} onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} /></div>)}</div><div className="flex justify-end gap-3 pt-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">{editingId ? "Update Contract" : "Save Contract"}</Button></div></form></RecordFormModal>
+    </AppLayout>
   );
 }

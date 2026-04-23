@@ -1,30 +1,19 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
-import { getProfileOrThrow } from "@/lib/profile";
+import AppLayout from "@/components/layout/AppLayout";
 import RecordFormModal from "@/components/shared/RecordFormModal";
+import SearchableEntitySelect from "@/components/shared/SearchableEntitySelect";
 import { useModuleColumns } from "@/hooks/useModuleColumns";
 import DynamicField from "@/components/shared/DynamicField";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { listJobOptions, listClientOptions, listOrganizationUserOptions } from "@/lib/recruitmentOptions";
+import { listHRAdminOnlyRows, createHRAdminOnlyRow, updateHRAdminOnlyRow, deleteHRAdminOnlyRow } from "@/lib/workforceCrud";
+import { toast } from "sonner";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
-async function listOnboarding(currentUser) {
-  const profile = await getProfileOrThrow(currentUser.id);
-
-  let query = supabase
-    .from("onboarding")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
-
-  if (profile.role === "employee") {
-    query = query.eq("created_by", currentUser.id);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
-}
+const HIDDEN_DUPLICATE_FIELDS = ["employee_id","employee_name","user_id","user_name","person_id","person_name","job_id","job_title","client_id","client_name"];
 
 export default function Onboarding() {
   const { authUser } = useAuth();
@@ -34,201 +23,26 @@ export default function Onboarding() {
   const [form, setForm] = useState({});
   const { tableColumns, formColumns } = useModuleColumns("onboarding");
 
-  const { data: onboarding = [], isLoading, error } = useQuery({
-    queryKey: ["onboarding", authUser?.id],
-    queryFn: () => listOnboarding(authUser),
-    enabled: !!authUser?.id,
-  });
+  const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["onboarding", authUser?.id], queryFn: () => listHRAdminOnlyRows({ table: "onboarding", module: "onboarding", currentUser: authUser }), enabled: !!authUser?.id });
+  const { data: userOptions = [] } = useQuery({ queryKey: ["organization-user-options", authUser?.id], queryFn: () => listOrganizationUserOptions(authUser), enabled: !!authUser?.id });
+  const { data: jobOptions = [] } = useQuery({ queryKey: ["job-options", authUser?.id], queryFn: () => listJobOptions(authUser), enabled: !!authUser?.id });
+  const { data: clientOptions = [] } = useQuery({ queryKey: ["client-options", authUser?.id], queryFn: () => listClientOptions(authUser), enabled: !!authUser?.id });
 
-  const createMutation = useMutation({
-    mutationFn: async (payload) => {
-      const profile = await getProfileOrThrow(authUser.id);
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
+  const visibleFormColumns = useMemo(() => formColumns.filter((field) => !HIDDEN_DUPLICATE_FIELDS.includes(field.field_key)), [formColumns]);
+  const allowedKeys = useMemo(() => formColumns.map((f) => f.field_key), [formColumns]);
 
-      const { data, error } = await supabase
-        .from("onboarding")
-        .insert({
-          ...cleanPayload,
-          organization_id: profile.organization_id,
-          created_by: authUser.id,
-          updated_by: authUser.id,
-        })
-        .select()
-        .single();
+  const createMutation = useMutation({ mutationFn: (payload) => createHRAdminOnlyRow({ table: "onboarding", module: "onboarding", payload, currentUser: authUser, allowedKeys }), onSuccess: async () => { toast.success("Onboarding record created"); await queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); }, onError: (err) => toast.error(err.message || "Failed to create onboarding record") });
+  const updateMutation = useMutation({ mutationFn: ({ id, payload }) => updateHRAdminOnlyRow({ table: "onboarding", module: "onboarding", id, payload, currentUser: authUser, allowedKeys }), onSuccess: async () => { toast.success("Onboarding record updated"); await queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] }); setOpen(false); setEditingId(null); setForm({}); }, onError: (err) => toast.error(err.message || "Failed to update onboarding record") });
+  const deleteMutation = useMutation({ mutationFn: (id) => deleteHRAdminOnlyRow({ table: "onboarding", module: "onboarding", id, currentUser: authUser }), onSuccess: async () => { toast.success("Onboarding record deleted"); await queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] }); }, onError: (err) => toast.error(err.message || "Failed to delete onboarding record") });
 
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }) => {
-      const allowedKeys = formColumns.map((f) => f.field_key);
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([key]) => allowedKeys.includes(key))
-      );
-
-      const { data, error } = await supabase
-        .from("onboarding")
-        .update({
-          ...cleanPayload,
-          updated_by: authUser.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
-      setForm({});
-      setEditingId(null);
-      setOpen(false);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const { error } = await supabase.from("onboarding").delete().eq("id", id);
-      if (error) throw error;
-      return true;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["onboarding", authUser?.id] });
-    },
-  });
-
-  const openAddModal = () => {
-    setForm({});
-    setEditingId(null);
-    setOpen(true);
-  };
-
-  const openEditModal = (row) => {
-    setForm(row);
-    setEditingId(row.id);
-    setOpen(true);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, payload: form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const renderCellValue = (row, fieldKey) => {
-    const value = row[fieldKey];
-    if (value === null || value === undefined || value === "") return "-";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return value;
-  };
+  const handleOpenAdd = () => { setEditingId(null); setForm({}); setOpen(true); };
+  const handleOpenEdit = (row) => { setEditingId(row.id); setForm(row); setOpen(true); };
+  const handleSubmit = (e) => { e.preventDefault(); editingId ? updateMutation.mutate({ id: editingId, payload: form }) : createMutation.mutate(form); };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Onboarding</h1>
-          <p className="text-muted-foreground">Manage onboarding records.</p>
-        </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 font-medium"
-        >
-          + Add Onboarding
-        </button>
-      </div>
-
-      <div className="rounded-2xl border overflow-hidden bg-card">
-        {isLoading ? (
-          <div className="p-6">Loading onboarding records...</div>
-        ) : error ? (
-          <div className="p-6 text-red-600">{error.message}</div>
-        ) : onboarding.length === 0 ? (
-          <div className="p-6 text-muted-foreground">No onboarding records yet.</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {tableColumns.map((col) => (
-                  <TableHead key={col.field_key} className="px-4 py-3 text-left">
-                    {col.field_label}
-                  </TableHead>
-                ))}
-                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {onboarding.map((row) => (
-                <TableRow key={row.id}>
-                  {tableColumns.map((col) => (
-                    <TableCell key={col.field_key} className="px-4 py-3">
-                      {renderCellValue(row, col.field_key)}
-                    </TableCell>
-                  ))}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(row)} className="rounded-lg border px-3 py-1.5">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this record?")) {
-                            deleteMutation.mutate(row.id);
-                          }
-                        }}
-                        className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Onboarding" : "Add Onboarding"}>
-        <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-4">
-          {formColumns.map((field) => (
-            <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}>
-              <label className="block text-sm mb-1">
-                {field.field_label}
-                {field.required && <span className="text-red-500 ml-1">*</span>}
-              </label>
-              <DynamicField
-                field={field}
-                value={form[field.field_key]}
-                onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-              />
-            </div>
-          ))}
-          <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2">
-              Cancel
-            </button>
-            <button type="submit" className="rounded-lg bg-blue-600 text-white px-4 py-2">
-              {editingId ? "Update Onboarding" : "Save Onboarding"}
-            </button>
-          </div>
-        </form>
-      </RecordFormModal>
-    </div>
+    <AppLayout heroRight={<Button onClick={handleOpenAdd} className="rounded-xl"><Plus className="mr-2 h-4 w-4" />Add Onboarding</Button>}>
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">{isLoading ? <div className="p-6 text-sm text-slate-500">Loading onboarding...</div> : error ? <div className="p-6 text-sm text-red-600">Failed to load onboarding.</div> : rows.length === 0 ? <div className="p-6 text-sm text-slate-500">No onboarding records found.</div> : (<Table><TableHeader><TableRow>{tableColumns.map((c) => <TableHead key={c.field_key}>{c.field_label}</TableHead>)}<TableHead className="w-[140px]">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}>{tableColumns.map((c) => <TableCell key={c.field_key}>{String(row?.[c.field_key] ?? "—")}</TableCell>)}<TableCell><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => handleOpenEdit(row)}><Pencil className="h-4 w-4" /></Button><Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(row.id)} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table>)}</div>
+      <RecordFormModal open={open} onOpenChange={setOpen} title={editingId ? "Edit Onboarding" : "Add Onboarding"}><form onSubmit={handleSubmit} className="space-y-6"><div className="grid gap-4 md:grid-cols-2"><SearchableEntitySelect label="Employee" value={form.employee_id || form.person_id} onChange={(value, option) => setForm((prev) => ({ ...prev, employee_id: value, person_id: value, employee_name: option?.label || "", person_name: option?.label || "" }))} options={userOptions} placeholder="Select employee" /><SearchableEntitySelect label="Job" value={form.job_id} onChange={(value, option) => setForm((prev) => ({ ...prev, job_id: value, job_title: option?.label || "" }))} options={jobOptions} placeholder="Select job" /><SearchableEntitySelect label="Client" value={form.client_id} onChange={(value, option) => setForm((prev) => ({ ...prev, client_id: value, client_name: option?.label || "" }))} options={clientOptions} placeholder="Select client" />{visibleFormColumns.map((field) => <div key={field.field_key} className={field.field_type === "textarea" ? "md:col-span-2" : ""}><label className="mb-1 block text-sm">{field.field_label}{field.required ? <span className="ml-1 text-red-500">*</span> : null}</label><DynamicField field={field} value={form[field.field_key]} onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} /></div>)}</div><div className="flex justify-end gap-3 pt-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">{editingId ? "Update Onboarding" : "Save Onboarding"}</Button></div></form></RecordFormModal>
+    </AppLayout>
   );
 }

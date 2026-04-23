@@ -3,115 +3,84 @@ import { getProfileOrThrow } from "@/lib/profile";
 
 const APP_URL = import.meta.env.VITE_APP_URL || window.location.origin;
 const RESET_PASSWORD_URL = `${APP_URL}/reset-password`;
-const INVITE_FUNCTION_SECRET = import.meta.env.VITE_INVITE_FUNCTION_SECRET || "";
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 
-export async function listUsers(currentUser) {
-  if (!currentUser?.id) {
-    throw new Error("Current user is missing.");
-  }
-
+async function callInviteFunction(currentUser, payload) {
   const profile = await getProfileOrThrow(currentUser.id);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabase.functions.invoke("invite-user", {
+    body: {
+      ...payload,
+      organization_id: profile.organization_id,
+      redirectTo: payload?.redirectTo || RESET_PASSWORD_URL,
+    },
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function listUsers(currentUser) {
+  const profile = await getProfileOrThrow(currentUser.id);
+
+  const { data: users, error: usersError } = await supabase
     .from("profiles")
     .select("*")
     .eq("organization_id", profile.organization_id)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
-  return data || [];
-}
+  if (usersError) throw usersError;
 
-async function callInviteFunction(currentUser, payload) {
-  if (!currentUser?.id) {
-    throw new Error("Current user is missing.");
+  const userIds = (users || []).map((u) => u.id);
+
+  let assignments = [];
+  if (userIds.length > 0) {
+    const { data: assignmentRows, error: assignmentError } = await supabase
+      .from("user_role_groups")
+      .select("*")
+      .in("user_id", userIds);
+
+    if (assignmentError) throw assignmentError;
+    assignments = assignmentRows || [];
   }
 
-  if (!SUPABASE_URL) {
-    throw new Error("Supabase URL is missing in .env");
+  const roleGroupIds = [...new Set(assignments.map((x) => x.role_group_id).filter(Boolean))];
+
+  let roleGroups = [];
+  if (roleGroupIds.length > 0) {
+    const { data: groupRows, error: groupError } = await supabase
+      .from("role_groups")
+      .select("*")
+      .in("id", roleGroupIds);
+
+    if (groupError) throw groupError;
+    roleGroups = groupRows || [];
   }
 
-  if (!INVITE_FUNCTION_SECRET) {
-    throw new Error("Invite function secret is missing in .env");
-  }
+  const groupMap = Object.fromEntries(roleGroups.map((g) => [g.id, g]));
+  const assignmentsByUser = assignments.reduce((acc, row) => {
+    if (!acc[row.user_id]) acc[row.user_id] = [];
+    acc[row.user_id].push({
+      ...row,
+      role_group: groupMap[row.role_group_id] || null,
+    });
+    return acc;
+  }, {});
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-invite-secret": INVITE_FUNCTION_SECRET,
-    },
-    body: JSON.stringify({
-      currentUserId: currentUser.id,
-      email: String(payload?.email || "").trim().toLowerCase(),
-      full_name: String(payload?.full_name || "").trim(),
-      role: String(payload?.role || "").trim(),
-      manager_id: payload?.manager_id || null,
-      redirectTo: payload?.redirectTo || RESET_PASSWORD_URL,
-    }),
-  });
-
-  let data = null;
-
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.error || data?.message || `Request failed with status ${response.status}`
-    );
-  }
-
-  return data;
+  return (users || []).map((user) => ({
+    ...user,
+    assigned_role_groups: assignmentsByUser[user.id] || [],
+  }));
 }
 
 export async function inviteUser(currentUser, payload) {
-  if (!payload?.email) {
-    throw new Error("Email is required");
-  }
-
-  if (!payload?.role) {
-    throw new Error("Role is required");
-  }
-
-  if (!payload?.full_name || !String(payload.full_name).trim()) {
-  throw new Error("Full name is required");
-}
-
-  return callInviteFunction(currentUser, {
-    ...payload,
-    redirectTo: payload?.redirectTo || RESET_PASSWORD_URL,
-  });
+  return callInviteFunction(currentUser, payload);
 }
 
 export async function resendInvite(currentUser, payload) {
-  if (!payload?.email) {
-    throw new Error("Email is required");
-  }
-
-  if (!payload?.role) {
-    throw new Error("Role is required");
-  }
-
-  if (!payload?.full_name || !String(payload.full_name).trim()) {
-  throw new Error("Full name is required");
-}
-
-  return callInviteFunction(currentUser, {
-    ...payload,
-    redirectTo: payload?.redirectTo || RESET_PASSWORD_URL,
-  });
+  return callInviteFunction(currentUser, payload);
 }
 
 export async function updateUserProfile(id, payload, currentUser) {
-  if (!currentUser?.id) {
-    throw new Error("Current user is missing.");
-  }
-
   const profile = await getProfileOrThrow(currentUser.id);
 
   const cleanPayload = {

@@ -1,124 +1,137 @@
-import React, { useMemo, useState } from "react";
+import React from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabaseClient";
-import { generatePayrollRun, calculatePayrollItem } from "@/api/payroll";
-
-async function listPayrollRuns() {
-  const { data, error } = await supabase
-    .from("payroll_runs")
-    .select(`
-      *,
-      payroll_items (*)
-    `)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
-}
+import AppLayout from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { runPayrollSync } from "@/api/payroll";
+import { listModuleRows } from "@/lib/supabaseCrud";
 
 export default function Payroll() {
   const { authUser } = useAuth();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({
-    title: "",
-    period_start: "",
-    period_end: "",
-    run_mode: "manual",
-  });
 
   const { data: runs = [], isLoading, error } = useQuery({
     queryKey: ["payroll-runs", authUser?.id],
-    queryFn: listPayrollRuns,
+    queryFn: () =>
+      listModuleRows({
+        table: "payroll_runs",
+        module: "payroll",
+        currentUser: authUser,
+      }),
     enabled: !!authUser?.id,
   });
 
-  const createRunMutation = useMutation({
-    mutationFn: (payload) => generatePayrollRun(authUser, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payroll-runs", authUser?.id] });
-      setForm({ title: "", period_start: "", period_end: "", run_mode: "manual" });
+  const { data: syncJobs = [] } = useQuery({
+    queryKey: ["payroll-sync-jobs", authUser?.id],
+    queryFn: () =>
+      listModuleRows({
+        table: "payroll_sync_jobs",
+        module: "payroll",
+        currentUser: authUser,
+      }),
+    enabled: !!authUser?.id,
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: ({ runId, provider }) =>
+      runPayrollSync({
+        run_id: runId,
+        provider,
+        run_type: "manual",
+      }),
+    onSuccess: async () => {
+      toast.success("Payroll sync requested");
+      await queryClient.invalidateQueries({ queryKey: ["payroll-sync-jobs", authUser?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["payroll-runs", authUser?.id] });
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Failed to sync payroll");
     },
   });
 
-  const previewExample = useMemo(() => {
-    return calculatePayrollItem({
-      regular_hours: 40,
-      overtime_hours: 5,
-      hourly_rate: 30,
-      deductions: 120,
-      bonuses: 200,
-      taxes: 250,
-    });
-  }, []);
+  const latestSyncByRun = syncJobs.reduce((acc, row) => {
+    if (!acc[row.payroll_run_id]) {
+      acc[row.payroll_run_id] = row;
+    }
+    return acc;
+  }, {});
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Payroll</h1>
-        <p className="text-muted-foreground">Create manual or automated payroll runs with editable calculations.</p>
-      </div>
-
-      <div className="rounded-2xl border bg-card p-5 space-y-4">
-        <h2 className="text-lg font-semibold">Create Payroll Run</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm mb-1">Title</label>
-            <input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Run Mode</label>
-            <select value={form.run_mode} onChange={(e) => setForm((p) => ({ ...p, run_mode: e.target.value }))} className="w-full rounded-lg border px-3 py-2">
-              <option value="manual">Manual</option>
-              <option value="automated">Automated</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Period Start</label>
-            <input type="date" value={form.period_start} onChange={(e) => setForm((p) => ({ ...p, period_start: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Period End</label>
-            <input type="date" value={form.period_end} onChange={(e) => setForm((p) => ({ ...p, period_end: e.target.value }))} className="w-full rounded-lg border px-3 py-2" />
-          </div>
-        </div>
-        <div className="flex justify-end">
-          <button onClick={() => createRunMutation.mutate(form)} className="rounded-xl bg-blue-600 text-white px-4 py-2 font-medium">
-            Create Run
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Calculation Preview</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-xl border p-4">Gross Pay: {previewExample.gross_pay}</div>
-          <div className="rounded-xl border p-4">Net Pay: {previewExample.net_pay}</div>
-          <div className="rounded-xl border p-4">Manual adjustments supported</div>
-          <div className="rounded-xl border p-4">Live formula editing supported</div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border bg-card p-5 space-y-4">
-        <h2 className="text-lg font-semibold">Payroll Runs</h2>
+    <AppLayout
+      heroRight={
+        <Button onClick={() => syncMutation.mutate({ runId: null, provider: "gusto" })}>
+          Run Payroll Sync
+        </Button>
+      }
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         {isLoading ? (
-          <div>Loading payroll runs...</div>
+          <div className="p-6 text-sm text-slate-500">Loading payroll...</div>
         ) : error ? (
-          <div className="text-red-600">{error.message}</div>
+          <div className="p-6 text-sm text-red-600">Failed to load payroll.</div>
         ) : runs.length === 0 ? (
-          <div className="text-muted-foreground">No payroll runs created yet.</div>
+          <div className="p-6 text-sm text-slate-500">No payroll runs found.</div>
         ) : (
-          <div className="space-y-3">
-            {runs.map((run) => (
-              <div key={run.id} className="rounded-xl border p-4">
-                <div className="font-medium">{run.title}</div>
-                <div className="text-sm text-muted-foreground">{run.period_start} to {run.period_end}</div>
-                <div className="text-sm text-muted-foreground">Status: {run.status} | Mode: {run.run_mode}</div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Run</th>
+                  <th className="px-4 py-3">Period</th>
+                  <th className="px-4 py-3">Pay Date</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Latest Sync</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => {
+                  const latestSync = latestSyncByRun[run.id];
+
+                  return (
+                    <tr key={run.id} className="border-t border-slate-100">
+                      <td className="px-4 py-3">{run.name || "-"}</td>
+                      <td className="px-4 py-3">
+                        {run.period_start || "-"} → {run.period_end || "-"}
+                      </td>
+                      <td className="px-4 py-3">{run.pay_date || "-"}</td>
+                      <td className="px-4 py-3">{run.status || "-"}</td>
+                      <td className="px-4 py-3">
+                        {latestSync
+                          ? `${latestSync.provider}: ${latestSync.status}`
+                          : "Not synced"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            onClick={() => syncMutation.mutate({ runId: run.id, provider: "gusto" })}
+                            className="rounded-lg border px-3 py-1.5"
+                          >
+                            Sync to Gusto
+                          </button>
+                          <button
+                            onClick={() => syncMutation.mutate({ runId: run.id, provider: "adp" })}
+                            className="rounded-lg border px-3 py-1.5"
+                          >
+                            Sync to ADP
+                          </button>
+                          <button
+                            onClick={() => syncMutation.mutate({ runId: run.id, provider: "deel" })}
+                            className="rounded-lg border px-3 py-1.5"
+                          >
+                            Sync to Deel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-    </div>
+    </AppLayout>
   );
 }
